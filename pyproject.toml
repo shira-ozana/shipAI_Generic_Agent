@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "generic-langgraph-agent"
+version = "0.1.0"
+description = "A reusable Cursor SDK agent executed by LangGraph."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.0",
+    "langchain-core>=1.0",
+    "cursor-sdk>=1.5",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+studio = ["langgraph-cli[inmem]>=0.4"]
+api = ["fastapi>=0.115", "uvicorn>=0.30"]
+
+[project.scripts]
+generic-agent = "generic_agent.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/generic_agent"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/generic_agent", "tests", "docs", "README.md", "AGENTS.md", "langgraph.json", ".env.example"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-q"
