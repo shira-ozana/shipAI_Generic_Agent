@@ -26,13 +26,19 @@ the CLI or the tests.
 | `graph.py` | `build_agent` factory, the `run_cursor_agent` node, prompt rendering (`render_prompt`), default-prompt loading. The only module that calls `Agent.prompt`. |
 | `config.py` | `.env` loading, `Settings`, `list_model_ids()` (`Cursor.models.list()`), error translation (`ConfigError`, `CursorRunError`, `describe_error`). |
 | `tools.py` | Local Cursor SDK custom tools (`word_count`) and `default_tools()`. |
+| `runtime/agent_definition.py` | `AgentDefinition` (prompt, skills, rules, guardrails), `Skill`, `Guardrail`, `GuardrailPhase`, `GuardrailResult`, `AgentContext` (runtime context), `assemble_instructions`, `run_guardrails`. Plain data and helpers; never imports `graph`. |
+| `runtime/generic_agent.py` | `GenericAgent`: synchronous runner. `run(definition, messages, config=None)` invokes the graph with the definition as runtime context. |
+| `agents/` | Reserved for future agent definitions; contains only `.gitkeep` for now. |
 | `studio.py` | `make_graph()` factory referenced by `langgraph.json`. No checkpointer. |
 | `api.py` | FastAPI app (`app`, `create_app`): compiles the graph once at startup with `InMemorySaver` and serves `/api/health` and `/api/chat`. |
 | `__main__.py` | CLI (`python -m generic_agent`, `--list-models`): compiles once, runs the chat loop, renders replies and errors. |
 | `prompts/default_system.md` | Default agent instructions, shipped as package data. |
 
 Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`, `graph`;
-`graph` -> `config` (for `Settings` and `CursorRunError`).
+`runtime.generic_agent` -> `graph`, `runtime.agent_definition`;
+`graph` -> `config` (for `Settings` and `CursorRunError`) and
+`runtime.agent_definition`; `runtime.agent_definition` -> `config`. (`GenericAgent`
+imports `graph` inside `__init__` to avoid a circular import.)
 
 Per-module guides for changing each piece: [`modules/`](modules/README.md).
 
@@ -61,10 +67,17 @@ flowchart LR
 
 `run_cursor_agent(state)`:
 
+0. Instructions are `system_prompt` (the `build_agent` argument) unless the
+   invocation carries an `AgentContext`; then they are
+   `assemble_instructions(context.definition)` (see
+   [Runtime interface](#runtime-interface)).
 1. `render_prompt(instructions, messages, max_history_messages)` builds one text
    prompt: `<instructions>`, `<conversation_history>` (the most recent
    `max_history_messages` = 40 earlier human/assistant messages, omitted when
    empty) and `<current_user_message>` (the newest `HumanMessage`).
+   With a definition, **pre-run guardrails** then run on the latest
+   `HumanMessage` text; a failure raises `GuardrailError` and `Agent.prompt` is
+   never called.
 2. `Agent.prompt(prompt, AgentOptions(...))` runs locally with:
    - `model` and `api_key` from `Settings`;
    - `local.cwd` = a temporary scratch directory deleted after the run;
@@ -73,11 +86,63 @@ flowchart LR
      (`build_agent(..., builtin_tools=None)` restores Cursor's default toolset);
    - no `setting_sources`, so no ambient project/user rules are loaded.
 3. If `result.status != "finished"` the node raises `CursorRunError` (status,
-   run id, error message). Otherwise `result.result` is saved as an `AIMessage`
-   with `response_metadata` holding the Cursor run id, agent id and model.
+   run id, error message). Otherwise, with a definition, **post-run guardrails**
+   check `result.result` (failure raises `GuardrailError`, so nothing is saved).
+   A reply that passes is saved as an `AIMessage` with `response_metadata`
+   holding the Cursor run id, agent id and model.
 
 SDK errors that mean the run never started (`CursorAgentError` subclasses)
 propagate unchanged.
+
+## Runtime interface
+
+`runtime/` is the shared foundation for future agents. It adds no nodes: the
+graph is still `START -> run_cursor_agent -> END`.
+
+```python
+runner = GenericAgent(settings=settings, tools=tools)   # sync; optional checkpointer=...
+result = runner.run(
+    definition,                                          # AgentDefinition, per call
+    messages=[HumanMessage(content=user_message)],
+    config={"configurable": {"thread_id": "..."}},       # optional, needs a checkpointer
+)                                                        # same shape as graph.invoke()
+```
+
+`AgentDefinition` is a frozen dataclass:
+
+| Field | Meaning |
+| --- | --- |
+| `prompt` | Main instruction; must be a non-blank string. |
+| `skills` | Named instructional text, `Skill(name, content)` (or a `{name: text}` mapping). Names are unique. May be empty. |
+| `rules` | Instructions included on every run of the definition. May be empty. |
+| `guardrails` | `Guardrail(name, phase, check)`; `phase` is `pre_run` or `post_run`. May be empty. |
+
+- **Isolation**: `GenericAgent.run` builds the graph once (in `__init__`) and
+  passes the definition as invocation-scoped LangGraph runtime context
+  (`context=AgentContext(definition)`, schema set via
+  `StateGraph(..., context_schema=AgentContext)`). Context is not state and is
+  not checkpointed, so state stays `MessagesState` and checkpoints hold only
+  messages. Each call uses its own definition, including concurrent calls and
+  calls that share a thread.
+- **Assembly order** (`assemble_instructions`): `prompt`, then
+  `<rules>` (numbered), then `<skills>` (`<skill name="...">`), in declaration
+  order; empty sections are omitted. The result is passed as `instructions` to
+  `render_prompt`, so history and `<current_user_message>` keep their format.
+- **Guardrails**: `check(text)` returns `True` / `GuardrailResult(True)` to pass;
+  `False` / `GuardrailResult(False, message)` fails. Pre-run checks receive the
+  latest user message and run before `Agent.prompt`; post-run checks receive the
+  reply and run only after a `finished` result, before the `AIMessage` is
+  returned. They run in declaration order and the first failure stops the run. A
+  check that raises also fails. `GuardrailError` subclasses `CursorRunError`, so
+  the CLI (`describe_error`) and the API (`502`) handle it as any failed run. Its
+  text names the guardrail and phase (plus the check's own `message`) but never
+  the user text or the rejected reply.
+- **Compatibility**: `build_agent(settings, system_prompt, tools, ...)` is
+  unchanged. Without a context (CLI, API, Studio) the node uses `system_prompt`
+  from `prompts/default_system.md` and runs no guardrails.
+- Cursor options (settings, custom tools, scratch `cwd`, `tools=[]` by default)
+  are exactly those of `build_agent`; `GenericAgent` forwards `builtin_tools`,
+  `checkpointer` and `max_history_messages`.
 
 ## Custom tools
 
@@ -167,4 +232,7 @@ checkpoints within a thread, thread isolation, history trimming, failed runs,
 no secrets in state/checkpoints, config loading, `--list-models`, error mapping,
 CLI loop, the HTTP API (`tests/test_api.py`: reply, same-thread follow-up
 context, thread isolation, validation, `502` safety and guard release, `409`,
-CORS), and packaging / `langgraph.json`.
+CORS), the runtime (`tests/test_runtime.py`: definition validation, assembly
+order, prompt/rules/skills reaching the SDK, isolation across runs and threads,
+no definition in checkpoints, a failed guardrail at each phase), and packaging /
+`langgraph.json`.

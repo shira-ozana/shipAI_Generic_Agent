@@ -7,6 +7,7 @@ picture, then the guide for the piece you are touching.
 | Guide | Code | Read it when you... |
 | --- | --- | --- |
 | [graph.md](graph.md) | `src/generic_agent/graph.py` | change how a turn runs, how prompts are built, or which Cursor options are used |
+| [runtime.md](runtime.md) | `src/generic_agent/runtime/` | change agent definitions, guardrails or the `GenericAgent` runner |
 | [config.md](config.md) | `src/generic_agent/config.py` | touch credentials, `.env` loading, model listing or error text |
 | [tools.md](tools.md) | `src/generic_agent/tools.py` | add or change a Cursor custom tool |
 | [prompt.md](prompt.md) | `src/generic_agent/prompts/default_system.md` | change the agent's instructions |
@@ -18,7 +19,7 @@ picture, then the guide for the piece you are touching.
 ## Rules that apply everywhere
 
 - Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`,
-  `graph`; `graph` -> `config`. Never the other way around.
+  `graph`; `graph` -> `config`, `runtime.agent_definition`. Never the other way around.
 - `graph.py` is the only module that calls `Agent.prompt`.
 - Every entry point builds its graph with `build_agent`. None of them
   re-implements the node.

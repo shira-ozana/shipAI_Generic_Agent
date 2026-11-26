@@ -16,8 +16,15 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.runtime import Runtime
 
 from generic_agent.config import CursorRunError, Settings
+from generic_agent.runtime.agent_definition import (
+    AgentContext,
+    GuardrailPhase,
+    assemble_instructions,
+    run_guardrails,
+)
 
 DEFAULT_MAX_HISTORY_MESSAGES = 40
 """Most recent prior messages passed to each Cursor run."""
@@ -65,6 +72,10 @@ def render_prompt(
     return "\n\n".join(sections)
 
 
+def _latest_human_text(messages: Sequence[AnyMessage]) -> str:
+    return next(m.text for m in reversed(messages) if isinstance(m, HumanMessage))
+
+
 def build_agent(
     settings: Settings,
     system_prompt: str,
@@ -78,7 +89,9 @@ def build_agent(
 
     Args:
         settings: Cursor API key and model ID (never stored in graph state).
-        system_prompt: Instructions rendered into each Cursor run's prompt.
+        system_prompt: Instructions rendered into each Cursor run's prompt. A run
+            invoked with an ``AgentContext`` (``context=``) uses that definition's
+            assembled instructions and guardrails instead.
         tools: Local custom tools by name. Pass ``{}`` for a text-only agent.
         checkpointer: Optional checkpointer (e.g. ``InMemorySaver``). Leave unset
             when a host such as Agent Server manages persistence.
@@ -89,8 +102,15 @@ def build_agent(
     """
     custom_tools = dict(tools) or None
 
-    def run_cursor_agent(state: MessagesState) -> dict[str, list[AnyMessage]]:
-        prompt = render_prompt(system_prompt, state["messages"], max_history_messages)
+    def run_cursor_agent(
+        state: MessagesState, runtime: Runtime[AgentContext]
+    ) -> dict[str, list[AnyMessage]]:
+        messages = state["messages"]
+        definition = runtime.context.definition if runtime.context is not None else None
+        instructions = system_prompt if definition is None else assemble_instructions(definition)
+        prompt = render_prompt(instructions, messages, max_history_messages)
+        if definition is not None:
+            run_guardrails(definition, GuardrailPhase.PRE_RUN, _latest_human_text(messages))
         with tempfile.TemporaryDirectory(prefix="generic-agent-") as scratch_dir:
             result = Agent.prompt(
                 prompt,
@@ -104,6 +124,8 @@ def build_agent(
         if result.status != "finished":
             detail = f": {result.error_message}" if result.error_message else ""
             raise CursorRunError(f"Cursor run {result.status} (run id {result.id}){detail}")
+        if definition is not None:
+            run_guardrails(definition, GuardrailPhase.POST_RUN, result.result)
         reply = AIMessage(
             content=result.result,
             response_metadata={
@@ -114,7 +136,7 @@ def build_agent(
         )
         return {"messages": [reply]}
 
-    builder = StateGraph(MessagesState)
+    builder = StateGraph(MessagesState, context_schema=AgentContext)
     builder.add_node("run_cursor_agent", run_cursor_agent)
     builder.add_edge(START, "run_cursor_agent")
     builder.add_edge("run_cursor_agent", END)

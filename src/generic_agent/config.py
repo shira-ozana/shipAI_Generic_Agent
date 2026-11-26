@@ -25,6 +25,13 @@ class CursorRunError(RuntimeError):
     """Raised when a Cursor run started but did not finish successfully."""
 
 
+class GuardrailError(CursorRunError):
+    """Raised when a pre-run or post-run guardrail rejects a run.
+
+    A ``CursorRunError`` subclass so entry points handle it like any failed run.
+    """
+
+
 @dataclass(frozen=True)
 class Settings:
     """Cursor settings. The key is a ``SecretStr`` and hidden from ``repr``."""
@@ -82,7 +89,7 @@ def list_model_ids(settings: Settings) -> list[tuple[str, str]]:
 
 def describe_error(exc: BaseException) -> str:
     """Turn a failure into an actionable message. Never includes credentials."""
-    if isinstance(exc, (ConfigError, CursorRunError)):
+    if isinstance(exc, (ConfigError, CursorRunError)):  # includes GuardrailError
         return str(exc)
     if isinstance(exc, cursor_sdk.AuthenticationError):
         return (

@@ -13,7 +13,7 @@ place that calls `Agent.prompt`.
 | Symbol | What it does |
 | --- | --- |
 | `build_agent(settings, system_prompt, tools, *, checkpointer=None, max_history_messages=40, builtin_tools=())` | Factory every entry point uses. Returns a compiled graph. |
-| `run_cursor_agent(state)` (closure inside `build_agent`) | The single node: render prompt -> `Agent.prompt` -> check status -> return one `AIMessage`. |
+| `run_cursor_agent(state, runtime)` (closure inside `build_agent`) | The single node: pick instructions (`system_prompt`, or the definition in `runtime.context`) -> render prompt -> pre-run guardrails -> `Agent.prompt` -> check status -> post-run guardrails -> return one `AIMessage`. |
 | `render_prompt(instructions, messages, max_history_messages)` | Builds `<instructions>`, optional `<conversation_history>`, `<current_user_message>` and a closing line. Raises `ValueError` without a `HumanMessage`. |
 | `load_default_prompt()` | Reads `prompts/default_system.md` via `importlib.resources`. |
 | `DEFAULT_MAX_HISTORY_MESSAGES` | 40 earlier human/assistant messages per run. |
@@ -35,6 +35,12 @@ place that calls `Agent.prompt`.
 - `get_secret_value()` is called only when building `AgentOptions`.
 - Blank history messages are skipped; `max_history_messages <= 0` means no
   history.
+
+- With an `AgentContext` (from `GenericAgent`), instructions are
+  `assemble_instructions(definition)` and guardrails run; without one the node
+  behaves exactly as before. The definition never enters state.
+- A failed guardrail raises `GuardrailError` (a `CursorRunError`): nothing is
+  saved for that reply.
 
 ## Changing it
 

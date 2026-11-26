@@ -10,6 +10,10 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   `src/generic_agent/graph.py`. It is the only place that calls `Agent.prompt`.
 - Settings, `.env` loading, model listing, error messages:
   `src/generic_agent/config.py`.
+- Runtime interface (`AgentDefinition`, `GenericAgent`, guardrails):
+  `src/generic_agent/runtime/`. Definitions travel as invocation-scoped runtime
+  context, never in graph state. `src/generic_agent/agents/` is reserved for
+  future agent definitions (only `.gitkeep` for now).
 - Agent instructions: `src/generic_agent/prompts/default_system.md` (package
   data, loaded with `importlib.resources`). Don't inline long prompts in Python.
 - Tools: local `cursor_sdk.CustomTool`s in `src/generic_agent/tools.py`;

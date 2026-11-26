@@ -38,3 +38,10 @@ def test_pyproject_depends_on_cursor_sdk_not_anthropic() -> None:
     text = (ROOT / "pyproject.toml").read_text()
     assert '"cursor-sdk' in text
     assert "anthropic" not in text
+
+
+def test_agents_package_dir_is_reserved_and_empty() -> None:
+    import generic_agent
+
+    agents = Path(generic_agent.__file__).parent / "agents"
+    assert [p.name for p in agents.iterdir()] == [".gitkeep"]

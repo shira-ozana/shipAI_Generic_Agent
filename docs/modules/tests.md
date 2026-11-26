@@ -29,6 +29,7 @@ Needs `pip install -e ".[dev,studio,api]"` (the API tests use FastAPI's
 | File | Covers |
 | --- | --- |
 | `test_graph.py` | graph shape, replies, tools, history, isolation, trimming, errors, no secrets |
+| `test_runtime.py` | `AgentDefinition` validation, assembly, definition isolation, guardrails at each phase |
 | `test_config.py` | `.env`/shell loading, placeholders, model listing, `describe_error` |
 | `test_cli.py` | chat loop, error handling, `main` exit codes, `--list-models` |
 | `test_api.py` | HTTP contract: reply, context, isolation, validation, 502, 409, CORS |
