@@ -36,6 +36,13 @@ Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`, `graph
 
 Per-module guides for changing each piece: [`modules/`](modules/README.md).
 
+## INIT agent
+
+`src/init_agent/` is a second graph built on top of this one. Each of its LLM calls is
+`build_agent(settings, <INIT prompt pack>, {})` with no checkpointer. It clones `REPO_URL`,
+writes an agent harness under `platform/` on branch `shipAI`, and pushes it. Its router is
+mounted into `api.py` as `/api/init`. See [`modules/init_agent.md`](modules/init_agent.md).
+
 ## Graph state
 
 `MessagesState`: a single `messages` list with the `add_messages` reducer,

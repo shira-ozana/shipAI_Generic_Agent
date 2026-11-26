@@ -17,6 +17,10 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 - Entry points: CLI in `__main__.py`, Studio factory in `studio.py` (referenced
   by `langgraph.json`), local HTTP API in `api.py` (FastAPI). All must call
   `build_agent`.
+- INIT agent: `src/init_agent/` (graph, prompt pack in `prompts/`, writer,
+  `/api/init` router mounted by `api.py`). Rules, guidelines and skills for the
+  INIT prompt are Markdown files in `src/init_agent/prompts/`, not Python strings.
+  Read `docs/modules/init_agent.md` first.
 - Tests: `tests/`, offline only. Use the `mock_cursor` fixture (`conftest.py`,
   `fakes.py`), which patches `generic_agent.graph.Agent`.
 

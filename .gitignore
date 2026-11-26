@@ -11,3 +11,4 @@ dist/
 .pytest_cache/
 .langgraph_api/
 .DS_Store
+workspaces/

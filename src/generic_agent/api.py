@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from generic_agent.config import Settings, describe_error, load_settings
 from generic_agent.graph import build_agent, load_default_prompt
 from generic_agent.tools import default_tools
+from init_agent.api import router as init_router
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+
+    # INIT agent (POST /api/init, GET /api/init/{runId}); see src/init_agent/api.py
+    app.include_router(init_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

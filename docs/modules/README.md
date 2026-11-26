@@ -13,6 +13,7 @@ picture, then the guide for the piece you are touching.
 | [cli.md](cli.md) | `src/generic_agent/__main__.py` | change the terminal chat or `--list-models` |
 | [studio.md](studio.md) | `src/generic_agent/studio.py`, `langgraph.json` | change the LangGraph Studio / Agent Server entry |
 | [api.md](api.md) | `src/generic_agent/api.py` | change the local HTTP API used by `sdlc-ui` |
+| [init_agent.md](init_agent.md) | `src/init_agent/` | change the INIT agent: graph, prompt pack (rules, guidelines, skills), harness writer, `/api/init` |
 | [tests.md](tests.md) | `tests/` | add or change tests or the Cursor mock |
 
 ## Rules that apply everywhere

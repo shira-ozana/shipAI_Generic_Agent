@@ -18,6 +18,9 @@ python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000
 | `GET /api/health` | - | `200 {"status":"ok"}` (never calls Cursor) | - |
 | `POST /api/chat` | `{"threadId":"<UUID>","message":"<text>"}` | `200 {"threadId":"<same UUID>","reply":"<text>"}` | `422` invalid input, `409` thread busy, `502` failed or empty run |
 
+`create_app` also mounts the INIT router (`POST /api/init`, `GET /api/init/{runId}`,
+`GET /api/init/{runId}/report`); see [init_agent.md](init_agent.md).
+
 Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 `sdlc-ui`; update `README.md` and `docs/architecture.md` too.
 

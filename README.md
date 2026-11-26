@@ -160,6 +160,18 @@ to keep conversation history per thread. `max_history_messages=` (default 40)
 limits how much earlier conversation goes into each run. A run that does not
 finish raises `generic_agent.config.CursorRunError`.
 
+## INIT agent
+
+`src/init_agent/` builds an agent harness for any repository. Set `REPO_URL` (and
+`GIT_TOKEN` to push) in `.env`, then:
+
+```bash
+python -m init_agent             # clone REPO_URL -> branch shipAI -> platform/ -> push
+python -m init_agent --dry-run   # plan and draft only
+```
+
+or `POST /api/init` on the running API. Details: [docs/modules/init_agent.md](docs/modules/init_agent.md).
+
 ## Add a tool
 
 Define a `cursor_sdk.CustomTool` (description, JSON input schema, `execute`) in
