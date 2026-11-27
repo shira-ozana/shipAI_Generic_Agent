@@ -25,8 +25,10 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
-from generic_agent.config import Settings, describe_error, load_settings
+from generic_agent.config import Settings, describe_error, load_settings, load_task_split_settings
 from generic_agent.graph import build_agent, load_default_prompt
+from generic_agent.task_plans.routes import USER_HEADER, build_router
+from generic_agent.task_plans.service import TaskPlanService, create_task_plan_service
 from generic_agent.tools import default_tools
 
 logger = logging.getLogger(__name__)
@@ -87,25 +89,40 @@ class ThreadGuard:
             self._active.discard(thread_id)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, task_plans: TaskPlanService | None = None
+) -> FastAPI:
     """Create the API app.
 
     ``settings`` is loaded from ``CURSOR_API_KEY`` / ``CURSOR_MODEL`` (shell or
     ``.env``) at startup when omitted. The graph is compiled once at startup.
+
+    ``task_plans`` serves ``/api/task-plans``. When omitted it is built from
+    ``TASK_SPLIT_REPOSITORIES`` / ``TASK_SPLIT_DB`` if configured; otherwise
+    those endpoints answer ``503``.
     """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        resolved = settings or load_settings()
         app.state.agent = build_agent(
-            settings or load_settings(),
+            resolved,
             load_default_prompt(),
             default_tools(),
             checkpointer=InMemorySaver(),
         )
         app.state.guard = ThreadGuard()
+        owned_plans = None
+        if task_plans is None:
+            task_split = load_task_split_settings()
+            if task_split is not None:
+                owned_plans = create_task_plan_service(resolved, task_split)
+        app.state.task_plans = task_plans or owned_plans
         try:
             yield
         finally:
+            if owned_plans is not None:
+                owned_plans.store.close()
             close_default_client()
 
     app = FastAPI(title="generic-langgraph-agent", lifespan=lifespan)
@@ -113,8 +130,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origin_regex=LOCAL_ORIGIN_REGEX,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", USER_HEADER],
     )
+    app.include_router(build_router())
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

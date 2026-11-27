@@ -40,8 +40,13 @@ def test_pyproject_depends_on_cursor_sdk_not_anthropic() -> None:
     assert "anthropic" not in text
 
 
-def test_agents_package_dir_is_reserved_and_empty() -> None:
+def test_agent_definitions_live_under_agents_and_their_assets_are_packaged() -> None:
     import generic_agent
 
-    agents = Path(generic_agent.__file__).parent / "agents"
-    assert [p.name for p in agents.iterdir()] == [".gitkeep"]
+    package = Path(generic_agent.__file__).parent
+    assert (package / "agents" / "task_split" / "definition.py").is_file()
+    assets = package / "prompts" / "task_split"
+    assert (assets / "prompt.md").is_file() and (assets / "rules.md").is_file()
+    from generic_agent.agents.task_split.definition import SKILL_NAMES
+
+    assert all((assets / "skills" / f"{name}.md").is_file() for name in SKILL_NAMES)

@@ -131,6 +131,31 @@ curl -s -X POST http://127.0.0.1:8000/api/chat \
 # {"threadId":"3f2b8c1e-6a4d-4e0b-9d57-1c2a7e5f9b10","reply":"..."}
 ```
 
+## Task Split agent (HLS to dependency document)
+
+`generic_agent.agents.task_split` turns HLS documents plus read-only access to one
+repository revision into tasks grouped by owning component or service, with direct
+prerequisites. A planning run ends with a draft; tasks are saved only when an
+authorized user approves that exact draft version.
+
+```bash
+# .env (see .env.example): a checkout of the revision to plan against
+TASK_SPLIT_REPOSITORIES={"shop": {"path": "/abs/path/to/shop-checkout"}}
+python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000
+```
+
+| Request (header `X-User-Id: <user>`) | Result |
+| --- | --- |
+| `POST /api/task-plans` `{"repositoryId","hlsDocuments":[{"id","title","content"}]}` | pending draft grouped by owner (or clarification questions) |
+| `GET /api/task-plans/{planId}` | review view of the latest version |
+| `POST /api/task-plans/{planId}/versions/{n}/approve` | saves version `n`'s tasks and dependencies atomically; safe to retry |
+| `POST /api/task-plans/{planId}/versions/{n}/decline` | declines it; no tasks |
+
+The agent's prompt, rules and skills are in `src/generic_agent/prompts/task_split/`.
+See [docs/modules/task-split.md](docs/modules/task-split.md),
+[docs/modules/task-plans.md](docs/modules/task-plans.md) (contract, and what the
+separate `sdlc-ui` still needs) and the sample in `tests/fixtures/task_split/`.
+
 ## Use it from Python
 
 `build_agent(settings, system_prompt, tools, *, checkpointer=None)` returns a

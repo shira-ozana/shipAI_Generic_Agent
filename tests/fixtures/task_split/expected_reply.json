@@ -1,0 +1,93 @@
+{
+  "status": "plan",
+  "plan": {
+    "hls_references": ["HLS-1", "HLS-2"],
+    "groups": [
+      {
+        "id": "order-service",
+        "name": "Order service",
+        "kind": "service",
+        "proposed": false,
+        "hls_references": ["HLS-1#Order service", "HLS-1#Event contract"],
+        "repo_paths": ["services/order", "contracts"]
+      },
+      {
+        "id": "notification-service",
+        "name": "Notification service",
+        "kind": "service",
+        "proposed": false,
+        "hls_references": ["HLS-1#Notification service"],
+        "repo_paths": ["services/notification"]
+      }
+    ],
+    "tasks": [
+      {
+        "id": "ORD-1",
+        "group_id": "order-service",
+        "title": "Define the ShipmentDispatched event schema",
+        "scope": "Add the JSON Schema for shipment.dispatched. Publishing and consuming are out of scope.",
+        "deliverable": "contracts/shipment_dispatched.json",
+        "acceptance_criteria": [
+          "The schema requires orderId, customerEmail and trackingUrl.",
+          "A payload without customerEmail fails validation against the schema."
+        ],
+        "hls_references": ["HLS-1#Event contract", "HLS-2"],
+        "repo_references": ["contracts/order_created.json"],
+        "depends_on": []
+      },
+      {
+        "id": "ORD-2",
+        "group_id": "order-service",
+        "title": "Publish shipment.dispatched when an order is dispatched",
+        "scope": "Emit the event from the DISPATCHED transition. Consumer behaviour is out of scope.",
+        "deliverable": "Publisher invoked by mark_dispatched, with a unit test",
+        "acceptance_criteria": [
+          "Marking an order DISPATCHED publishes exactly one shipment.dispatched event.",
+          "The event payload validates against contracts/shipment_dispatched.json."
+        ],
+        "hls_references": ["HLS-1#Order service"],
+        "repo_references": ["services/order/status.py", "services/order/tests/test_status.py"],
+        "depends_on": ["ORD-1"]
+      },
+      {
+        "id": "NOT-1",
+        "group_id": "notification-service",
+        "title": "Consume shipment.dispatched and email the customer",
+        "scope": "Add the consumer and email template. Event publishing is out of scope.",
+        "deliverable": "Consumer and template under services/notification, with unit tests",
+        "acceptance_criteria": [
+          "A valid event sends one email to customerEmail containing trackingUrl.",
+          "An event without customerEmail sends no email and is recorded as rejected.",
+          "The same event delivered twice sends one email."
+        ],
+        "hls_references": ["HLS-1#Notification service", "HLS-2"],
+        "repo_references": [
+          "services/notification/consumer.py",
+          "services/notification/templates",
+          "services/notification/tests/test_consumer.py"
+        ],
+        "depends_on": ["ORD-1"]
+      },
+      {
+        "id": "NOT-2",
+        "group_id": "notification-service",
+        "title": "Verify dispatch-to-email end to end",
+        "scope": "One integration test across both services. No production code changes.",
+        "deliverable": "End-to-end test in tests/e2e",
+        "acceptance_criteria": [
+          "Dispatching an order results in exactly one email containing the tracking link."
+        ],
+        "hls_references": ["HLS-1#Verification"],
+        "repo_references": ["tests/e2e"],
+        "depends_on": ["ORD-2", "NOT-1"]
+      }
+    ],
+    "discrepancies": [
+      {
+        "description": "The HLS says the order service publishes no shipment events; the repository confirms there is no publisher yet.",
+        "hls_references": ["HLS-1#Order service"],
+        "repo_paths": ["services/order/status.py"]
+      }
+    ]
+  }
+}

@@ -12,8 +12,9 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   `src/generic_agent/config.py`.
 - Runtime interface (`AgentDefinition`, `GenericAgent`, guardrails):
   `src/generic_agent/runtime/`. Definitions travel as invocation-scoped runtime
-  context, never in graph state. `src/generic_agent/agents/` is reserved for
-  future agent definitions (only `.gitkeep` for now).
+  context, never in graph state. Concrete agents live in
+  `src/generic_agent/agents/<name>/` (currently `task_split`; their assets in
+  `src/generic_agent/prompts/<name>/`).
 - Agent instructions: `src/generic_agent/prompts/default_system.md` (package
   data, loaded with `importlib.resources`). Don't inline long prompts in Python.
 - Tools: local `cursor_sdk.CustomTool`s in `src/generic_agent/tools.py`;
@@ -21,6 +22,11 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 - Entry points: CLI in `__main__.py`, Studio factory in `studio.py` (referenced
   by `langgraph.json`), local HTTP API in `api.py` (FastAPI). All must call
   `build_agent`.
+- Task Split (`agents/task_split/`): prompt, rules and skills in
+  `prompts/task_split/`; document validation in `schema.py`; scoped read-only
+  repo tools in `repository.py`. Its backend (draft store, approval, review view,
+  `/api/task-plans`) is `src/generic_agent/task_plans/`. Tasks are saved only by
+  `TaskPlanStore.approve`.
 - Tests: `tests/`, offline only. Use the `mock_cursor` fixture (`conftest.py`,
   `fakes.py`), which patches `generic_agent.graph.Agent`.
 
@@ -33,6 +39,9 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   scratch `cwd`; don't widen this without a reason.
 - Don't pass a checkpointer in `studio.py` (Agent Server provides one).
 - Tests must never call Cursor or need network/LangSmith.
+- Task Split: the model never sees repository paths, URLs or credentials; repo
+  tools stay read-only and scoped; a pending, declined or superseded draft writes
+  zero task rows; approval is per exact plan version and idempotent.
 
 ## Commands
 

@@ -10,6 +10,9 @@ source .venv/bin/activate
 python -m pytest
 ```
 
+Task Split fixtures live in `tests/fixtures/task_split/` (excluded from collection). Two
+repository tests run a real `git init`/`commit` in a temp dir.
+
 Needs `pip install -e ".[dev,studio,api]"` (the API tests use FastAPI's
 `TestClient`).
 
@@ -33,6 +36,10 @@ Needs `pip install -e ".[dev,studio,api]"` (the API tests use FastAPI's
 | `test_config.py` | `.env`/shell loading, placeholders, model listing, `describe_error` |
 | `test_cli.py` | chat loop, error handling, `main` exit codes, `--list-models` |
 | `test_api.py` | HTTP contract: reply, context, isolation, validation, 502, 409, CORS |
+| `test_task_split_schema.py` | dependency-document validation: ownership, unique IDs, missing dependencies, cycles, citations, clarification |
+| `test_task_split_repository.py` | repository guardrails: scope, traversal, symlinks, credential files, git revision |
+| `test_task_split_agent.py` | definition assembly, planning runs on the mock Cursor, tools, guardrails, no credentials in input |
+| `test_task_plans.py` | drafts vs approval: zero tasks unless approved, exact version, idempotent retries, rollback, HTTP flow |
 | `test_packaging.py` | `langgraph.json`, Studio factory, packaged prompt, dependencies |
 
 ## Writing a test

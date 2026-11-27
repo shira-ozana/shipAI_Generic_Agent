@@ -15,6 +15,8 @@ readable, secret-free text.
 | `load_settings(environ=None, env_file=None, *, require_model=True)` | Reads `CURSOR_API_KEY` / `CURSOR_MODEL`. |
 | `list_model_ids(settings)` | `Cursor.models.list()` as `(id, display_name)` pairs. |
 | `describe_error(exc)` | Maps exceptions to actionable text. |
+| `load_task_split_settings(environ=None, env_file=None)` | Optional `TASK_SPLIT_REPOSITORIES` (JSON: repository ID to `{path, revision?, allowed_paths?}`) and `TASK_SPLIT_DB`; `None` when unset (task-plan endpoints answer `503`). Errors never echo the values. |
+| `RepositoryConfig`, `TaskSplitSettings` | Frozen dataclasses for the above. |
 | `ConfigError` | Missing or placeholder configuration. |
 | `CursorRunError` | A run started but did not finish successfully. |
 

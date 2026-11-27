@@ -18,6 +18,9 @@ python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000
 | `GET /api/health` | - | `200 {"status":"ok"}` (never calls Cursor) | - |
 | `POST /api/chat` | `{"threadId":"<UUID>","message":"<text>"}` | `200 {"threadId":"<same UUID>","reply":"<text>"}` | `422` invalid input, `409` thread busy, `502` failed or empty run |
 
+The Task Split review/approval routes (`/api/task-plans`) are included by
+`create_app(settings, task_plans=None)`; see [task-plans.md](task-plans.md).
+
 Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 `sdlc-ui`; update `README.md` and `docs/architecture.md` too.
 
@@ -42,7 +45,7 @@ Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 - All graph exceptions and empty reply text map to `502` with the fixed message.
   Never return `describe_error`, SDK messages or run error text to the client;
   log them server-side only.
-- CORS allows only `http://localhost:<port>` and `http://127.0.0.1:<port>`.
+- CORS allows only `http://localhost:<port>` and `http://127.0.0.1:<port>`, `GET`/`POST`, and the `Content-Type` and `X-User-Id` headers.
 - Single process only: history and the guard are in memory.
 
 ## Tests

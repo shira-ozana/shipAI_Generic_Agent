@@ -29,7 +29,7 @@ contract.
   per-call context.
 - `runtime/` never calls `Agent.prompt`; `graph.py` does.
 - Guardrail errors must not include user text, replies or secrets.
-- Put concrete future agents under `src/generic_agent/agents/`.
+- Put concrete agents under `src/generic_agent/agents/<name>/` (first one: [task-split.md](task-split.md)).
 
 ## Tests
 

@@ -10,8 +10,10 @@ from generic_agent.config import (
     ConfigError,
     CursorRunError,
     describe_error,
+    RepositoryConfig,
     list_model_ids,
     load_settings,
+    load_task_split_settings,
 )
 
 SECRET = "cursor-test-secret-value"
@@ -92,3 +94,38 @@ def test_list_model_ids_uses_cursor_models_list(monkeypatch, tmp_path: Path) -> 
 )
 def test_describe_error_is_actionable(exc: BaseException, expected: str) -> None:
     assert expected in describe_error(exc)
+
+
+# --- Task Split backend settings -------------------------------------------------
+
+
+def test_task_split_is_disabled_without_repositories(tmp_path: Path) -> None:
+    assert load_task_split_settings({}, tmp_path / "missing.env") is None
+
+
+def test_task_split_settings_are_read_from_the_environment_or_env_file(tmp_path: Path) -> None:
+    repos = '{"shop": {"path": "/srv/shop", "revision": "abc123", "allowed_paths": ["services"]}, "docs": {"path": "/srv/docs"}}'
+    path = env_file(tmp_path, f"TASK_SPLIT_REPOSITORIES={repos}\nTASK_SPLIT_DB=/var/plans.sqlite3\n")
+
+    settings = load_task_split_settings({}, path)
+    assert settings is not None and settings.database_path == "/var/plans.sqlite3"
+    assert settings.repositories == {
+        "shop": RepositoryConfig("/srv/shop", "abc123", ("services",)),
+        "docs": RepositoryConfig("/srv/docs", None, ()),
+    }
+
+    shell = load_task_split_settings({"TASK_SPLIT_REPOSITORIES": '{"x": {"path": "/x"}}'}, path)
+    assert shell is not None and list(shell.repositories) == ["x"]  # shell wins; DB comes from the file
+    assert shell.database_path == "/var/plans.sqlite3"
+    assert load_task_split_settings({"TASK_SPLIT_REPOSITORIES": '{"x": {"path": "/x"}}'}, tmp_path / "none").database_path == "task_plans.sqlite3"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["not json", "[]", "{}", '{"a": "/path"}', '{"a": {}}', '{"a": {"path": ""}}',
+     '{"a": {"path": "/p", "allowed_paths": "src"}}', '{"a": {"path": "/p", "revision": 3}}'],
+)
+def test_invalid_task_split_repositories_raise_without_echoing_values(raw: str) -> None:
+    with pytest.raises(ConfigError, match="TASK_SPLIT_REPOSITORIES") as info:
+        load_task_split_settings({"TASK_SPLIT_REPOSITORIES": raw}, Path("/nonexistent/.env"))
+    assert raw not in str(info.value)

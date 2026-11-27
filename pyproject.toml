@@ -33,3 +33,4 @@ include = ["src/generic_agent", "tests", "docs", "README.md", "AGENTS.md", "lang
 testpaths = ["tests"]
 pythonpath = ["tests"]
 addopts = "-q"
+norecursedirs = ["tests/fixtures"]
