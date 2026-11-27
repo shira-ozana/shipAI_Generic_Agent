@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-architect"
+version = "0.1.0"
+description = "SDLC Architect Agent: writes HLD files for a feature, built on the generic LangGraph agent."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # The shared generic agent (repository root) is a dependency, never a copy.
+    # Install it first from the repo root: pip install -e .
+    "generic-langgraph-agent>=0.1",
+    "langgraph>=1.0",
+    "langchain-core>=1.0",
+    "cursor-sdk>=1.5",
+    "python-dotenv>=1.0",
+    "pydantic>=2.7",
+    "supabase>=2.6",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+agent-architect = "agent_architect.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_architect"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-q"
