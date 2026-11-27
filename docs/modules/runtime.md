@@ -4,7 +4,9 @@
 
 ## Purpose
 
-Shared foundation for future agents. An `AgentDefinition` (prompt, skills,
+Shared foundation for agents that want guardrails run by the graph. (Task Split no
+longer uses it: it calls `runner.GenericAgent` like INIT and keeps its checks in
+Python; see [task-split.md](task-split.md).) An `AgentDefinition` (prompt, skills,
 rules, guardrails) is passed to `GenericAgent.run(...)` on each call and reaches
 the existing `run_cursor_agent` node as LangGraph runtime context. See
 [`../architecture.md`](../architecture.md#runtime-interface) for the full

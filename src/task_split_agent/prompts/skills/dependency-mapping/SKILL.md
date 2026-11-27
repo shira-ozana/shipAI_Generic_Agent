@@ -1,3 +1,10 @@
+---
+id: dependency-mapping
+title: Dependency mapping
+kind: skill
+node: plan
+priority: 50
+---
 Purpose: record which task deliverables are real prerequisites for starting other tasks, across groups as well as inside them, and expose what can run in parallel.
 
 Method:

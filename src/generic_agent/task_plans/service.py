@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
-from generic_agent.agents.task_split import (
+from task_split_agent import (
     Clarification,
     HlsDocument,
     RepositoryAccess,

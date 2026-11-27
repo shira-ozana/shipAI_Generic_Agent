@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from generic_agent.agents.task_split import (
+from task_split_agent import (
     Clarification,
     DependencyDocument,
     PlanValidationError,
@@ -14,7 +14,7 @@ from generic_agent.agents.task_split import (
     execution_waves,
     parse_reply,
 )
-from generic_agent.agents.task_split.schema import find_cycle
+from task_split_agent.schema import find_cycle
 
 HLS_IDS = ["HLS-1", "HLS-2"]
 

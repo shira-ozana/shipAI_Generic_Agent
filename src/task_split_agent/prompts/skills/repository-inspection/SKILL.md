@@ -1,3 +1,10 @@
+---
+id: repository-inspection
+title: Repository inspection
+kind: skill
+node: plan
+priority: 20
+---
 Purpose: confirm where each affected component lives and what already exists, using only the read-only repository tools.
 
 Method:

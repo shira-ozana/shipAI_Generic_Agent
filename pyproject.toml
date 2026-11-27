@@ -25,10 +25,10 @@ generic-agent = "generic_agent.__main__:main"
 init-agent = "init_agent.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/generic_agent", "src/init_agent"]
+packages = ["src/generic_agent", "src/init_agent", "src/task_split_agent"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/generic_agent", "src/init_agent", "tests", "docs", "README.md", "AGENTS.md", "langgraph.json", ".env.example"]
+include = ["src/generic_agent", "src/init_agent", "src/task_split_agent", "tests", "docs", "README.md", "AGENTS.md", "langgraph.json", ".env.example"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -38,7 +38,9 @@ Needs `pip install -e ".[dev,studio,api]"` (the API tests use FastAPI's
 | `test_api.py` | HTTP contract: reply, context, isolation, validation, 502, 409, CORS |
 | `test_task_split_schema.py` | dependency-document validation: ownership, unique IDs, missing dependencies, cycles, citations, clarification |
 | `test_task_split_repository.py` | repository guardrails: scope, traversal, symlinks, credential files, git revision |
-| `test_task_split_agent.py` | definition assembly, planning runs on the mock Cursor, tools, guardrails, no credentials in input |
+| `test_task_split_agent.py` | prompt pack (order, rules/guidelines/skills/guardrails), the four components reaching `GenericAgent.run`, planning runs on the mock Cursor, tools, reply validation, no credentials in input, old import paths |
+| `test_task_plans.py` | store/approval invariants, review view, and the `/api/task-plans` HTTP flow through the planner on the mock Cursor |
+| `test_packaging.py` | Studio entry, packaged prompt assets (including `task_split_agent/prompts`), wheel and sdist config |
 | `test_task_plans.py` | drafts vs approval: zero tasks unless approved, exact version, idempotent retries, rollback, HTTP flow |
 | `test_packaging.py` | `langgraph.json`, Studio factory, packaged prompt, dependencies |
 

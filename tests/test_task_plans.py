@@ -12,7 +12,7 @@ import pytest
 from fakes import SECRET, FakeCursor, FakeRunResult, Responder
 from fastapi.testclient import TestClient
 
-from generic_agent.agents.task_split import (
+from task_split_agent import (
     DependencyDocument,
     TaskSplitPlanner,
     parse_reply,
@@ -391,6 +391,22 @@ def test_http_flow_draft_review_approve_and_retry(make_client, service, hls_docu
     assert saved_dependencies(service.store, plan_id) == EXPECTED_DEPENDENCIES
     assert client.get(f"/api/task-plans/{plan_id}", headers=as_user(ALICE)).json()["status"] == "approved"
     assert len(fake.calls) == 1
+
+
+def test_http_planning_request_reaches_cursor_with_the_prompt_pack_and_only_repo_tools(
+    make_client, hls_documents, plan_reply
+) -> None:
+    client, fake = make_client(lambda p, o: json.dumps(plan_reply))
+
+    response = client.post("/api/task-plans", json=body(hls_documents), headers=as_user(ALICE))
+
+    assert response.status_code == 200
+    (prompt, options), = fake.calls  # one planning call per request
+    for part in ("## Stage 1", "## Stage 5", "# Guardrails", "# Rules (binding)", "# Guidelines (recommended)",
+                 "# Skills", "## Skill: repository-inspection", "<planning_request>"):
+        assert part in prompt
+    assert options.tools == [] and set(options.local.custom_tools) == {"repo_list_dir", "repo_read_file", "repo_search"}
+    assert "fixtures" not in prompt and SECRET not in prompt  # no checkout path or key in the model input
 
 
 def test_http_pending_declined_and_superseded_drafts_save_zero_tasks(

@@ -63,6 +63,9 @@ START -> prepare_workspace -> scan_repository -> analyze_repository -> derive_sk
 | guidelines | `guidelines/g01..g06` | `applies_to` node |
 | skills | `skills/<id>/SKILL.md` | `node`, and `files` for `draft_file` |
 
+The frontmatter parser and file walker are shared with the Task Split pack
+(`generic_agent/prompt_docs.py`); selection and content stay in `init_agent/prompt_pack.py`.
+
 Order in the system prompt: core, guardrails, rules, guidelines, the node's skill, operator
 `extra_rules` / `extra_guidelines` from the request, then the shared skill catalog. The JSON
 schema goes in the task message. `INIT_PROMPTS_DIR` adds files or replaces them by `id`

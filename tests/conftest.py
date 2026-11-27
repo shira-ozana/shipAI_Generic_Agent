@@ -10,7 +10,7 @@ import pytest
 from fakes import SECRET, FakeCursor, Responder
 from pydantic import SecretStr
 
-from generic_agent.agents.task_split import HlsDocument, RepositoryAccess
+from task_split_agent import HlsDocument, RepositoryAccess
 from generic_agent.config import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures" / "task_split"

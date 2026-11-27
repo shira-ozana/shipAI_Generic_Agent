@@ -1,3 +1,10 @@
+---
+id: hls-analysis
+title: HLS analysis
+kind: skill
+node: plan
+priority: 10
+---
 Purpose: turn HLS prose into a map of affected components or services, their responsibilities, interfaces and required changes.
 
 Method:

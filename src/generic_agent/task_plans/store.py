@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from generic_agent.agents.task_split.schema import (
+from task_split_agent.schema import (
     DependencyDocument,
     PlanValidationError,
     validate_document,

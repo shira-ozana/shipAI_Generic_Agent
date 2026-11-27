@@ -25,25 +25,26 @@ the CLI or the tests.
 | Module | Responsibility |
 | --- | --- |
 | `graph.py` | `build_agent` factory, the `run_cursor_agent` node, prompt rendering (`render_prompt`), default-prompt loading. The only module that calls `Agent.prompt`. |
-| `runner.py` | INIT runner (`generic_agent.runner.GenericAgent`, not the `runtime` one): INIT creates one instance and call `run(prompt, instructions=, rules=, guidelines=, skills=, shared_skills=, history=)`. It renders the material into one system prompt (`compose_instructions`), runs a `build_agent` graph with no checkpointer and returns `RunResult(text, metadata)`. |
+| `runner.py` | Runner for prompt-pack agents (`generic_agent.runner.GenericAgent`, not the `runtime` one): INIT creates one instance and Task Split one per planning run; each calls `run(prompt, instructions=, rules=, guidelines=, skills=, shared_skills=, history=)`. It renders the material into one system prompt (`compose_instructions`), runs a `build_agent` graph with no checkpointer and returns `RunResult(text, metadata)`. |
 | `config.py` | `.env` loading, `Settings`, `list_model_ids()` (`Cursor.models.list()`), error translation (`ConfigError`, `CursorRunError`, `describe_error`). |
 | `tools.py` | Local Cursor SDK custom tools (`word_count`) and `default_tools()`. |
 | `runtime/agent_definition.py` | `AgentDefinition` (prompt, skills, rules, guardrails), `Skill`, `Guardrail`, `GuardrailPhase`, `GuardrailResult`, `AgentContext` (runtime context), `assemble_instructions`, `run_guardrails`. Plain data and helpers; never imports `graph`. |
 | `runtime/generic_agent.py` | `GenericAgent`: synchronous runner. `run(definition, messages, config=None)` invokes the graph with the definition as runtime context. |
-| `agents/task_split/` | The Task Split agent: `definition.py` (prompt/rules/skills loading, guardrails, request builder), `schema.py` (dependency document + validation), `repository.py` (scoped read-only repo tools), `planner.py` (`TaskSplitPlanner`). See [modules/task-split.md](modules/task-split.md). |
+| `prompt_docs.py` | Frontmatter parsing and Markdown file walking shared by the INIT and Task Split prompt packs (`PromptDoc`, `parse_prompt_doc`, `walk_markdown`, `matches_file`). No selection logic. |
+| `agents/task_split/` | Re-export shim for the old Task Split import paths. The agent itself is `src/task_split_agent/` (below). |
 | `task_plans/` | Backend for review and approval: `store.py` (SQLite drafts + tasks, one transaction per approval), `service.py`, `review.py` (grouped review view), `routes.py` (`/api/task-plans`). See [modules/task-plans.md](modules/task-plans.md). |
 | `studio.py` | `make_graph()` factory referenced by `langgraph.json`. No checkpointer. |
 | `api.py` | FastAPI app (`app`, `create_app`): compiles the graph once at startup with `InMemorySaver` and serves `/api/health` and `/api/chat`. |
 | `__main__.py` | CLI (`python -m generic_agent`, `--list-models`): compiles once, runs the chat loop, renders replies and errors. |
 | `prompts/default_system.md` | Default agent instructions, shipped as package data. |
-| `prompts/task_split/` | Task Split prompt, `rules.md` and `skills/*.md`, shipped as package data. |
 
 Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`, `graph`;
 `runtime.generic_agent` -> `graph`, `runtime.agent_definition`;
 `graph` -> `config` (for `Settings` and `CursorRunError`) and
 `runtime.agent_definition`; `runtime.agent_definition` -> `config`. (`GenericAgent`
-imports `graph` inside `__init__` to avoid a circular import.) `runner` (the INIT runner)
--> `graph`, `config`.
+imports `graph` inside `__init__` to avoid a circular import.) `runner`
+-> `graph`, `config`. `init_agent`, `task_split_agent` -> `runner`, `config`,
+`prompt_docs`; `task_plans` -> `task_split_agent`.
 
 Per-module guides for changing each piece: [`modules/`](modules/README.md).
 
@@ -160,22 +161,34 @@ result = runner.run(
 
 ## Task Split agent and approval flow
 
-Task Split is a concrete `AgentDefinition` run by `GenericAgent` on the same
-graph; nothing in the graph changed. `TaskSplitPlanner.plan` builds a
-`<planning_request>` (HLS documents, repository ID and revision only), creates a
-fresh runner whose only custom tools are the read-only `repo_*` tools of one
-`RepositoryAccess`, and runs the definition. Its post-run guardrail parses the
-JSON reply and enforces ownership, unique IDs, valid dependencies, an acyclic
-graph and in-scope citations; a failure raises `GuardrailError` and nothing is
-returned. The result is a plan or clarification questions, never tasks.
+`src/task_split_agent/` is a package of its own, built like INIT: code and
+prompt pack (`prompts/`) side by side, running on `generic_agent.runner.GenericAgent`.
+Nothing in the graph changed. `TaskSplitPlanner.plan`:
+
+1. builds a `<planning_request>` (HLS documents, repository ID and revision only)
+   and validates it in Python (document count, size, unique IDs);
+2. screens it for credentials and tokens before Cursor is involved (bad input,
+   API `422`);
+3. creates a `GenericAgent` whose only custom tools are the read-only `repo_*`
+   tools of one `RepositoryAccess` (Cursor built-in tools stay off) and calls
+   `run(request, **PromptPack.run_input("plan"))` once. `core.md` carries the five
+   stages and the JSON contract, so all five stages are explicit inside that one
+   call; rules, guidelines, skills and guardrails come from the other prompt files;
+4. parses the reply and validates it against the submitted HLS document IDs and
+   the authorized repository scope (ownership, unique IDs, valid dependencies,
+   acyclic graph, in-scope citations). A failure raises `GuardrailError` (API
+   `502`) and nothing is returned. The result is a plan or clarification
+   questions, never tasks. The Cursor run ID comes from `RunResult.metadata`.
 
 `task_plans` stores a plan as a *pending draft* with a backend-assigned version
 and the inspected revision. Tasks, groups and dependencies are written only by
 `TaskPlanStore.approve(plan_id, version, user)`, in one transaction, for an
 authorized user and that exact pending version; repeating the same approval
-writes nothing. Pending, declined and superseded drafts have zero task rows. The
-UI (separate repo) reads `/api/task-plans/...` and approves by version. Details
-and the UI handoff: [modules/task-plans.md](modules/task-plans.md).
+writes nothing. Pending, declined and superseded drafts have zero task rows. A
+clarification creates no draft, and an invalid reply creates neither. The UI
+(separate repo) reads `/api/task-plans/...` and approves by version. Details and
+the UI handoff: [modules/task-plans.md](modules/task-plans.md); the agent:
+[modules/task-split.md](modules/task-split.md).
 
 ## Custom tools
 
@@ -269,4 +282,6 @@ CORS), the runtime (`tests/test_runtime.py`: definition validation, assembly
 order, prompt/rules/skills reaching the SDK, isolation across runs and threads,
 no definition in checkpoints, a failed guardrail at each phase), and packaging /
 `langgraph.json`. Task Split has its own offline tests (`tests/test_task_split_*.py`,
-`tests/test_task_plans.py`) with an HLS/repository fixture in `tests/fixtures/task_split/`.
+`tests/test_task_plans.py` for the `/api/task-plans` flow) with an HLS/repository
+fixture in `tests/fixtures/task_split/`; `tests/test_packaging.py` checks that the
+prompt assets ship with the package.

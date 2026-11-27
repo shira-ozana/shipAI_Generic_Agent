@@ -8,7 +8,7 @@ picture, then the guide for the piece you are touching.
 | --- | --- | --- |
 | [graph.md](graph.md) | `src/generic_agent/graph.py` | change how a turn runs, how prompts are built, or which Cursor options are used |
 | [runtime.md](runtime.md) | `src/generic_agent/runtime/` | change agent definitions, guardrails or the `GenericAgent` runner |
-| [task-split.md](task-split.md) | `src/generic_agent/agents/task_split/`, `prompts/task_split/` | change the Task Split prompt, rules, skills, schema, repo tools or guardrails |
+| [task-split.md](task-split.md) | `src/task_split_agent/` | change the Task Split prompt pack (rules, guidelines, skills, guardrails), planner, schema or repo tools |
 | [task-plans.md](task-plans.md) | `src/generic_agent/task_plans/` | change draft review, approval, task persistence or `/api/task-plans`; includes the UI handoff |
 | [graph.md](graph.md#genericagentrun) | `src/generic_agent/runner.py` | change the INIT runner `runner.GenericAgent.run()`, the entry other agents (INIT) call with prompt, rules, guidelines and skills |
 | [config.md](config.md) | `src/generic_agent/config.py` | touch credentials, `.env` loading, model listing or error text |
@@ -23,7 +23,8 @@ picture, then the guide for the piece you are touching.
 ## Rules that apply everywhere
 
 - Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`,
-  `graph`; `runner` -> `graph`, `config`; `graph` -> `config`, `runtime.agent_definition`.
+  `graph`; `runner` -> `graph`, `config`; `graph` -> `config`, `runtime.agent_definition`;
+  `init_agent` and `task_split_agent` -> `runner`, `config`, `prompt_docs`.
   Never the other way around.
 - `graph.py` is the only module that calls `Agent.prompt`.
 - Every entry point builds its graph with `build_agent`. None of them

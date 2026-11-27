@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from generic_agent.agents.task_split import RepositoryAccess, RepositoryAccessError
-from generic_agent.agents.task_split.repository import detect_git_head
+from task_split_agent import RepositoryAccess, RepositoryAccessError
+from task_split_agent.repository import detect_git_head
 
 
 def test_lists_reads_and_searches_the_checkout(repository) -> None:

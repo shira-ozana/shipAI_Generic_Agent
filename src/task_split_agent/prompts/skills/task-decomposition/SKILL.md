@@ -1,3 +1,10 @@
+---
+id: task-decomposition
+title: Task decomposition
+kind: skill
+node: plan
+priority: 30
+---
 Purpose: split the required changes into tasks that one owner can pick up and verify independently.
 
 Method:

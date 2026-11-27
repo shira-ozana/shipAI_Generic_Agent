@@ -17,70 +17,13 @@ the built-in one). Each file starts with a small frontmatter block:
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
 from importlib import resources
-from importlib.resources.abc import Traversable
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
+from generic_agent.prompt_docs import PromptDoc, matches_file, parse_prompt_doc, walk_markdown
 from generic_agent.runner import Section, SharedSkillRef, Skill, compose_instructions
 
 from .models import SharedSkill
-
-
-@dataclass
-class PromptDoc:
-    id: str
-    kind: str
-    body: str
-    title: str = ""
-    applies_to: list[str] = field(default_factory=lambda: ["*"])
-    node: str = ""
-    files: list[str] = field(default_factory=list)
-    priority: int = 100
-    source: str = ""
-
-
-def _parse(text: str, source: str) -> PromptDoc:
-    meta: dict = {}
-    body = text
-    if text.startswith("---"):
-        _, header, body = text.split("---", 2)
-        for line in header.strip().splitlines():
-            key, _, value = line.partition(":")
-            value = value.strip()
-            try:
-                meta[key.strip()] = json.loads(value)
-            except json.JSONDecodeError:
-                meta[key.strip()] = value
-    return PromptDoc(
-        id=str(meta.get("id") or source),
-        kind=str(meta.get("kind", "rule")),
-        title=str(meta.get("title", "")),
-        applies_to=list(meta.get("applies_to", ["*"])),
-        node=str(meta.get("node", "")),
-        files=list(meta.get("files", [])),
-        priority=int(meta.get("priority", 100)),
-        body=body.strip(),
-        source=source,
-    )
-
-
-def _walk(root: Traversable | Path, prefix: str = ""):
-    for entry in sorted(root.iterdir(), key=lambda e: e.name):
-        if entry.is_dir():
-            yield from _walk(entry, f"{prefix}{entry.name}/")
-        elif entry.name.endswith(".md"):
-            yield f"{prefix}{entry.name}", entry.read_text(encoding="utf-8")
-
-
-def _matches_file(patterns: list[str], file_path: str | None) -> bool:
-    if not patterns:
-        return True
-    if not file_path:
-        return False
-    p = PurePosixPath(file_path)
-    return any(p.name == pat or p.match(pat) for pat in patterns)
 
 
 class PromptPack:
@@ -90,12 +33,12 @@ class PromptPack:
     @classmethod
     def load(cls, override_dir: str = "") -> "PromptPack":
         by_id: dict[str, PromptDoc] = {}
-        for rel, text in _walk(resources.files("init_agent").joinpath("prompts")):
-            doc = _parse(text, f"builtin:{rel}")
+        for rel, text in walk_markdown(resources.files("init_agent").joinpath("prompts")):
+            doc = parse_prompt_doc(text, f"builtin:{rel}")
             by_id[doc.id] = doc
         if override_dir and Path(override_dir).is_dir():
-            for rel, text in _walk(Path(override_dir)):
-                doc = _parse(text, f"override:{rel}")
+            for rel, text in walk_markdown(Path(override_dir)):
+                doc = parse_prompt_doc(text, f"override:{rel}")
                 by_id[doc.id] = doc
         return cls(sorted(by_id.values(), key=lambda d: (d.priority, d.id)))
 
@@ -105,12 +48,12 @@ class PromptPack:
             if d.kind != kind:
                 continue
             if kind == "skill":
-                if d.node != node or not _matches_file(d.files, file_path):
+                if d.node != node or not matches_file(d.files, file_path):
                     continue
             else:
                 if "*" not in d.applies_to and node not in d.applies_to:
                     continue
-                if d.files and node == "draft_file" and not _matches_file(d.files, file_path):
+                if d.files and node == "draft_file" and not matches_file(d.files, file_path):
                     continue
             out.append(d)
         return out

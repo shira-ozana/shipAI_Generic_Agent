@@ -1,3 +1,10 @@
+---
+id: acceptance-criteria
+title: Acceptance criteria
+kind: skill
+node: plan
+priority: 40
+---
 Purpose: write criteria that a reviewer can verify by observation, so a task can be accepted or rejected without opinion.
 
 Method:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from generic_agent.agents.task_split.schema import (
+from task_split_agent.schema import (
     Clarification,
     DependencyDocument,
     cross_group_dependencies,

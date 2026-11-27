@@ -204,7 +204,7 @@ curl -s -X POST http://127.0.0.1:8000/api/chat \
 
 ## Task Split agent (HLS to dependency document)
 
-`generic_agent.agents.task_split` turns HLS documents plus read-only access to one
+`task_split_agent` (`src/task_split_agent/`) turns HLS documents plus read-only access to one
 repository revision into tasks grouped by owning component or service, with direct
 prerequisites. A planning run ends with a draft; tasks are saved only when an
 authorized user approves that exact draft version.
@@ -222,7 +222,8 @@ python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000
 | `POST /api/task-plans/{planId}/versions/{n}/approve` | saves version `n`'s tasks and dependencies atomically; safe to retry |
 | `POST /api/task-plans/{planId}/versions/{n}/decline` | declines it; no tasks |
 
-The agent's prompt, rules and skills are in `src/generic_agent/prompts/task_split/`.
+The agent's prompt, rules, guidelines, guardrails and skills are in `src/task_split_agent/prompts/`;
+its planner calls `generic_agent.runner.GenericAgent`, like INIT.
 See [docs/modules/task-split.md](docs/modules/task-split.md),
 [docs/modules/task-plans.md](docs/modules/task-plans.md) (contract, and what the
 separate `sdlc-ui` still needs) and the sample in `tests/fixtures/task_split/`.

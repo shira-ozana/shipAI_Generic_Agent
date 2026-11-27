@@ -21,8 +21,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
-from generic_agent.agents.task_split import HlsDocument
-from generic_agent.agents.task_split.definition import MAX_HLS_DOCUMENTS
+from task_split_agent import HlsDocument
+from task_split_agent.planner import MAX_HLS_DOCUMENTS
 from generic_agent.config import describe_error
 from generic_agent.task_plans.review import build_clarification, build_review
 from generic_agent.task_plans.service import TaskPlanService, UnknownRepositoryError

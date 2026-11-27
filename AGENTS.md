@@ -14,9 +14,10 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   `src/generic_agent/config.py`.
 - Runtime interface (`AgentDefinition`, `GenericAgent`, guardrails):
   `src/generic_agent/runtime/`. Definitions travel as invocation-scoped runtime
-  context, never in graph state. Concrete agents live in
-  `src/generic_agent/agents/<name>/` (currently `task_split`; their assets in
-  `src/generic_agent/prompts/<name>/`).
+  context, never in graph state. New agents follow the INIT/Task Split pattern
+  below instead; `generic_agent/agents/task_split/` is only a re-export shim.
+- Prompt-file format (frontmatter parsing) shared by INIT and Task Split:
+  `src/generic_agent/prompt_docs.py`. Each agent keeps its own files and selection.
 - Agent instructions: `src/generic_agent/prompts/default_system.md` (package
   data, loaded with `importlib.resources`). Don't inline long prompts in Python.
 - Tools: local `cursor_sdk.CustomTool`s in `src/generic_agent/tools.py`;
@@ -24,11 +25,15 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 - Entry points: CLI in `__main__.py`, Studio factory in `studio.py` (referenced
   by `langgraph.json`), local HTTP API in `api.py` (FastAPI). All must call
   `build_agent`.
-- Task Split (`agents/task_split/`): prompt, rules and skills in
-  `prompts/task_split/`; document validation in `schema.py`; scoped read-only
-  repo tools in `repository.py`. Its backend (draft store, approval, review view,
-  `/api/task-plans`) is `src/generic_agent/task_plans/`. Tasks are saved only by
-  `TaskPlanStore.approve`.
+- Task Split agent: `src/task_split_agent/` (planner, `schema.py` document
+  validation, `repository.py` scoped read-only repo tools, `prompt_pack.py`).
+  Its prompt pack is Markdown in `src/task_split_agent/prompts/` (`core.md`,
+  `guardrails.md`, `rules/`, `guidelines/`, `skills/<id>/SKILL.md`), not Python
+  strings. `TaskSplitPlanner.plan` calls `generic_agent.runner.GenericAgent.run`
+  once with `prompt_pack.run_input("plan")`; Python validates input and reply.
+  Its backend (draft store, approval, review view, `/api/task-plans`) is
+  `src/generic_agent/task_plans/`. Tasks are saved only by `TaskPlanStore.approve`.
+  Read `docs/modules/task-split.md` first.
 - INIT agent: `src/init_agent/` (graph, prompt pack in `prompts/`, writer,
   `/api/init` router mounted by `api.py`). Rules, guidelines and skills for the
   INIT prompt are Markdown files in `src/init_agent/prompts/`, not Python strings.
