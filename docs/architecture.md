@@ -25,6 +25,7 @@ the CLI or the tests.
 | Module | Responsibility |
 | --- | --- |
 | `graph.py` | `build_agent` factory, the `run_cursor_agent` node, prompt rendering (`render_prompt`), default-prompt loading. The only module that calls `Agent.prompt`. |
+| `runner.py` | INIT runner (`generic_agent.runner.GenericAgent`, not the `runtime` one): INIT creates one instance and call `run(prompt, instructions=, rules=, guidelines=, skills=, shared_skills=, history=)`. It renders the material into one system prompt (`compose_instructions`), runs a `build_agent` graph with no checkpointer and returns `RunResult(text, metadata)`. |
 | `config.py` | `.env` loading, `Settings`, `list_model_ids()` (`Cursor.models.list()`), error translation (`ConfigError`, `CursorRunError`, `describe_error`). |
 | `tools.py` | Local Cursor SDK custom tools (`word_count`) and `default_tools()`. |
 | `runtime/agent_definition.py` | `AgentDefinition` (prompt, skills, rules, guardrails), `Skill`, `Guardrail`, `GuardrailPhase`, `GuardrailResult`, `AgentContext` (runtime context), `assemble_instructions`, `run_guardrails`. Plain data and helpers; never imports `graph`. |
@@ -41,9 +42,19 @@ Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`, `graph
 `runtime.generic_agent` -> `graph`, `runtime.agent_definition`;
 `graph` -> `config` (for `Settings` and `CursorRunError`) and
 `runtime.agent_definition`; `runtime.agent_definition` -> `config`. (`GenericAgent`
-imports `graph` inside `__init__` to avoid a circular import.)
+imports `graph` inside `__init__` to avoid a circular import.) `runner` (the INIT runner)
+-> `graph`, `config`.
 
 Per-module guides for changing each piece: [`modules/`](modules/README.md).
+
+## INIT agent
+
+`src/init_agent/` is a second graph built on top of this one. INIT creates one
+`GenericAgent` instance per run; each LLM node calls `agent.run(task, **prompt_pack.run_input(node))`,
+so the node's instructions, rules, guidelines and skills go to the Generic Agent as data. It clones `REPO_URL`,
+writes an agent harness into the repository (root and code folders; report in
+`platform/init/`) on branch `shipAI`, and pushes it. Its router is
+mounted into `api.py` as `/api/init`. See [`modules/init_agent.md`](modules/init_agent.md).
 
 ## Graph state
 

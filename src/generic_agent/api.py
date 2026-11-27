@@ -30,6 +30,7 @@ from generic_agent.graph import build_agent, load_default_prompt
 from generic_agent.task_plans.routes import USER_HEADER, build_router
 from generic_agent.task_plans.service import TaskPlanService, create_task_plan_service
 from generic_agent.tools import default_tools
+from init_agent.api import router as init_router
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,9 @@ def create_app(
         allow_headers=["Content-Type", USER_HEADER],
     )
     app.include_router(build_router())
+
+    # INIT agent (POST /api/init, GET /api/init/{runId}); see src/init_agent/api.py
+    app.include_router(init_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

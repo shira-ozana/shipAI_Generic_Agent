@@ -20,6 +20,8 @@ python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000
 
 The Task Split review/approval routes (`/api/task-plans`) are included by
 `create_app(settings, task_plans=None)`; see [task-plans.md](task-plans.md).
+`create_app` also mounts the INIT router (`POST /api/init`, `GET /api/init/{runId}`,
+`GET /api/init/{runId}/report`); see [init_agent.md](init_agent.md).
 
 Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 `sdlc-ui`; update `README.md` and `docs/architecture.md` too.

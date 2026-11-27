@@ -13,6 +13,77 @@ LangGraph checkpoints hold the conversation; each run passes the relevant histor
 to a fresh Cursor agent. Cursor's built-in shell/file tools are disabled, so the
 agent can only use the tools you register.
 
+## Quick start: run the project
+
+Three parts run together on your machine:
+
+| Part | Folder | Port | Command |
+| --- | --- | --- | --- |
+| Generic Agent API (chat + `/api/init`) | this repository | `3000` | `python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 3000` |
+| Chat UI ([ShipAI_UI](https://github.com/shira-ozana/ShipAI_UI)), optional | `ShipAI_UI/` | `5173` | `npm run dev` |
+| INIT agent (CLI) | this repository | - | `python -m init_agent` |
+
+**1. Install (once)**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -e ".[dev,api]"
+cp .env.example .env                 # then edit .env (step 2)
+```
+
+**2. Fill `.env`** (never commit it, never paste keys into chat)
+
+| Key | Needed for | Value |
+| --- | --- | --- |
+| `CURSOR_API_KEY` | everything | key from <https://cursor.com/dashboard/integrations> |
+| `CURSOR_MODEL` | everything | an id from `python -m generic_agent --list-models` |
+| `REPO_URL` | INIT | repository INIT analyzes (default: the Angular RealWorld app) |
+| `GIT_TOKEN` | INIT push | optional: without it, git uses your login (`gh auth login`) |
+
+**3. Start the API on port 3000** (terminal 1, in this repository)
+
+```bash
+python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 3000
+curl http://127.0.0.1:3000/api/health      # {"status":"ok"}
+```
+
+- <http://localhost:3000/api/health>: health check
+- <http://localhost:3000/docs>: interactive API docs (`/api/chat`, `/api/init`)
+- `POST http://localhost:3000/api/chat` with `{"threadId": "<uuid>", "message": "..."}`
+
+Port 8000 is left free for other services.
+
+**4. Optional: start the chat UI** (terminal 2, in `ShipAI_UI/`)
+
+The UI's dev proxy targets port 8000, so point it at port 3000 with `VITE_API_URL`:
+
+```bash
+npm ci
+echo "VITE_API_URL=http://127.0.0.1:3000" > .env.local
+npm run dev                                # http://localhost:5173
+```
+
+**5. Run INIT** (terminal 3, in this repository)
+
+```bash
+python -m init_agent --dry-run           # plan and draft only, writes nothing
+INIT_PUSH=false python -m init_agent     # write + commit in workspaces/<run>/, no push
+python -m init_agent                     # write, commit and push branch shipAI
+```
+
+INIT writes `AGENTS.md`, `ARCHITECTURE.md`, `RULES.md`, ... at the repository root,
+`<folder>/AGENTS.md` next to the code (every folder with 3+ components), skills in
+`<folder>/skills/<name>/SKILL.md`, and the report `platform/init/INIT.md`. The same run
+is available from the API: `POST http://127.0.0.1:3000/api/init`.
+
+**Windows notes**
+
+- Smart App Control blocks a native module of `cursor-sdk`; every Cursor call fails with
+  "An Application Control policy has blocked this file". Turn it off (Windows Security >
+  App & browser control) or run in WSL.
+- The first Cursor call can be slow (bridge cold start); `GenericAgent.run()` retries it.
+
 ## Setup
 
 Requires Python 3.11+ (the commands below use `python3`; substitute
@@ -156,6 +227,28 @@ See [docs/modules/task-split.md](docs/modules/task-split.md),
 [docs/modules/task-plans.md](docs/modules/task-plans.md) (contract, and what the
 separate `sdlc-ui` still needs) and the sample in `tests/fixtures/task_split/`.
 
+## INIT runner: `generic_agent.runner.GenericAgent.run()`
+
+Create one instance and call `run()` with the task and the material the model must follow.
+The INIT agent works this way.
+
+```python
+from generic_agent.runner import GenericAgent, Section, Skill  # not generic_agent.GenericAgent
+
+agent = GenericAgent()  # CURSOR_API_KEY / CURSOR_MODEL from .env on first run
+result = agent.run(
+    "Summarize src/api.",
+    instructions="You are a code analyst.",
+    rules=[Section("R1", "Evidence is required", "Cite repo paths.")],
+    guidelines=["Keep it short."],
+    skills=[Skill("analyze-component", "1. Read the inventory. 2. ...")],
+)
+print(result.text, result.metadata["cursor_run_id"])
+```
+
+Each call is self-contained (no checkpointer); pass `history=[HumanMessage(...), AIMessage(...)]`
+for earlier turns. `await agent.arun(...)` is the async form.
+
 ## Use it from Python
 
 `build_agent(settings, system_prompt, tools, *, checkpointer=None)` returns a
@@ -184,6 +277,18 @@ Pass `checkpointer=InMemorySaver()` and `config={"configurable": {"thread_id": "
 to keep conversation history per thread. `max_history_messages=` (default 40)
 limits how much earlier conversation goes into each run. A run that does not
 finish raises `generic_agent.config.CursorRunError`.
+
+## INIT agent
+
+`src/init_agent/` builds an agent harness for any repository. Set `REPO_URL` (and
+`GIT_TOKEN` to push) in `.env`, then:
+
+```bash
+python -m init_agent             # clone REPO_URL -> branch shipAI -> harness in root + code folders -> push
+python -m init_agent --dry-run   # plan and draft only
+```
+
+or `POST /api/init` on the running API. Details: [docs/modules/init_agent.md](docs/modules/init_agent.md).
 
 ## Add a tool
 

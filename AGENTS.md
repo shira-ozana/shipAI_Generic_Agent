@@ -8,6 +8,8 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 
 - Graph logic (`run_cursor_agent`, `build_agent`, prompt rendering):
   `src/generic_agent/graph.py`. It is the only place that calls `Agent.prompt`.
+- `GenericAgent` (`run()` / `arun()` for other agents, e.g. INIT):
+  `src/generic_agent/runner.py`. It builds its graphs with `build_agent`.
 - Settings, `.env` loading, model listing, error messages:
   `src/generic_agent/config.py`.
 - Runtime interface (`AgentDefinition`, `GenericAgent`, guardrails):
@@ -27,6 +29,10 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   repo tools in `repository.py`. Its backend (draft store, approval, review view,
   `/api/task-plans`) is `src/generic_agent/task_plans/`. Tasks are saved only by
   `TaskPlanStore.approve`.
+- INIT agent: `src/init_agent/` (graph, prompt pack in `prompts/`, writer,
+  `/api/init` router mounted by `api.py`). Rules, guidelines and skills for the
+  INIT prompt are Markdown files in `src/init_agent/prompts/`, not Python strings.
+  Read `docs/modules/init_agent.md` first.
 - Tests: `tests/`, offline only. Use the `mock_cursor` fixture (`conftest.py`,
   `fakes.py`), which patches `generic_agent.graph.Agent`.
 
