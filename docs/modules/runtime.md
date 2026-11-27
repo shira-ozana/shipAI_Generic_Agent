@@ -14,7 +14,7 @@ contract.
 
 | Symbol | What it does |
 | --- | --- |
-| `AgentDefinition(prompt, skills=(), rules=(), guardrails=())` | Frozen, validated definition. `prompt` must be non-blank; collections may be empty. |
+| `AgentDefinition(prompt, skills=(), rules=(), guardrails=(), tools=None)` | Frozen, validated definition. `prompt` must be non-blank; collections may be empty. `tools`, when not `None`, replaces the runner's custom tools for that run only. |
 | `Skill(name, content)`, `Guardrail(name, phase, check)` | Value objects. `GuardrailPhase` is `pre_run` / `post_run`; `check(text)` returns `bool` or `GuardrailResult`. |
 | `AgentContext(definition)` | The runtime context passed with `graph.invoke(..., context=...)`. |
 | `assemble_instructions(definition)` | Prompt, then rules, then skills; fed to `render_prompt`. |
@@ -29,7 +29,8 @@ contract.
   per-call context.
 - `runtime/` never calls `Agent.prompt`; `graph.py` does.
 - Guardrail errors must not include user text, replies or secrets.
-- Put concrete agents under `src/generic_agent/agents/<name>/` (first one: [task-split.md](task-split.md)).
+- Put concrete agents under `src/generic_agent/agents/<name>/` (e.g. [task-split.md](task-split.md),
+  [requirement.md](requirement.md)).
 
 ## Tests
 

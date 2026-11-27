@@ -30,10 +30,11 @@ the CLI or the tests.
 | `tools.py` | Local Cursor SDK custom tools (`word_count`) and `default_tools()`. |
 | `runtime/agent_definition.py` | `AgentDefinition` (prompt, skills, rules, guardrails), `Skill`, `Guardrail`, `GuardrailPhase`, `GuardrailResult`, `AgentContext` (runtime context), `assemble_instructions`, `run_guardrails`. Plain data and helpers; never imports `graph`. |
 | `runtime/generic_agent.py` | `GenericAgent`: synchronous runner. `run(definition, messages, config=None)` invokes the graph with the definition as runtime context. |
+| `agents/requirement/` | The Requirement Agent: packaged instructions and skills, loader, per-thread clone tools, git publishing, `RequirementAgent` runner and its CLI. See [modules/requirement.md](modules/requirement.md). |
 | `agents/task_split/` | The Task Split agent: `definition.py` (prompt/rules/skills loading, guardrails, request builder), `schema.py` (dependency document + validation), `repository.py` (scoped read-only repo tools), `planner.py` (`TaskSplitPlanner`). See [modules/task-split.md](modules/task-split.md). |
 | `task_plans/` | Backend for review and approval: `store.py` (SQLite drafts + tasks, one transaction per approval), `service.py`, `review.py` (grouped review view), `routes.py` (`/api/task-plans`). See [modules/task-plans.md](modules/task-plans.md). |
 | `studio.py` | `make_graph()` factory referenced by `langgraph.json`. No checkpointer. |
-| `api.py` | FastAPI app (`app`, `create_app`): compiles the graph once at startup with `InMemorySaver` and serves `/api/health` and `/api/chat`. |
+| `api.py` | FastAPI app (`app`, `create_app`): compiles the graph once at startup with `InMemorySaver` and serves `/api/health`, `/api/chat` and the Requirement Agent's `/api/requirement/start` and `/api/requirement/chat`. |
 | `__main__.py` | CLI (`python -m generic_agent`, `--list-models`): compiles once, runs the chat loop, renders replies and errors. |
 | `prompts/default_system.md` | Default agent instructions, shipped as package data. |
 | `prompts/task_split/` | Task Split prompt, `rules.md` and `skills/*.md`, shipped as package data. |
@@ -130,6 +131,7 @@ result = runner.run(
 | `skills` | Named instructional text, `Skill(name, content)` (or a `{name: text}` mapping). Names are unique. May be empty. |
 | `rules` | Instructions included on every run of the definition. May be empty. |
 | `guardrails` | `Guardrail(name, phase, check)`; `phase` is `pre_run` or `post_run`. May be empty. |
+| `tools` | Optional `{name: CustomTool}`. `None` (default) uses the runner's tools; a mapping (`{}` = text-only) replaces them for this run only, e.g. tools bound to a per-thread working directory. Not compared, not checkpointed. |
 
 - **Isolation**: `GenericAgent.run` builds the graph once (in `__init__`) and
   passes the definition as invocation-scoped LangGraph runtime context
@@ -246,6 +248,18 @@ Behaviour:
 - **Single worker**: the checkpointer and the in-flight guard are in-process
   memory, so run exactly one uvicorn worker; history is lost on restart.
 
+## Requirement Agent
+
+`agents/requirement/` is the first concrete agent. Code runs a pre-flight
+(validate inputs, clone branch `ShipAi` per thread, check Init output under
+`.platform/`) before the first model call, then every turn runs on
+`GenericAgent` with an `AgentDefinition` built from packaged Markdown
+(`AGENTS.md` + 8 `SKILL.md` + templates) and tools bound to that thread's
+clone (read-only repository access, writes only to
+`.platform/{feature_id}/requierment/`, publishing via git in code). The graph is
+unchanged. Human-in-the-loop is turn-based on one thread. Full guide:
+[modules/requirement.md](modules/requirement.md).
+
 ## Configuration and errors
 
 Settings come from non-empty shell variables, falling back to `./.env` in the
@@ -267,6 +281,8 @@ CLI loop, the HTTP API (`tests/test_api.py`: reply, same-thread follow-up
 context, thread isolation, validation, `502` safety and guard release, `409`,
 CORS), the runtime (`tests/test_runtime.py`: definition validation, assembly
 order, prompt/rules/skills reaching the SDK, isolation across runs and threads,
-no definition in checkpoints, a failed guardrail at each phase), and packaging /
-`langgraph.json`. Task Split has its own offline tests (`tests/test_task_split_*.py`,
-`tests/test_task_plans.py`) with an HLS/repository fixture in `tests/fixtures/task_split/`.
+no definition in checkpoints, a failed guardrail at each phase), the
+Requirement Agent (`tests/test_requirement_agent.py`, local bare git remote),
+and packaging / `langgraph.json`. Task Split has its own offline tests
+(`tests/test_task_split_*.py`, `tests/test_task_plans.py`) with an
+HLS/repository fixture in `tests/fixtures/task_split/`.

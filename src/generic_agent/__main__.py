@@ -1,4 +1,8 @@
-"""CLI: ``python -m generic_agent`` (add ``--list-models`` to list model IDs)."""
+"""CLI: ``python -m generic_agent`` (add ``--list-models`` to list model IDs).
+
+``python -m generic_agent requirement ...`` runs the Requirement Agent
+(see ``generic_agent.agents.requirement.cli``).
+"""
 
 from __future__ import annotations
 
@@ -53,6 +57,11 @@ def run_session(
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "requirement":
+        from generic_agent.agents.requirement.cli import main as requirement_main
+
+        return requirement_main(argv[1:])
     parser = argparse.ArgumentParser(prog="python -m generic_agent", description=__doc__)
     parser.add_argument(
         "--list-models", action="store_true", help="print model IDs available to your Cursor account"

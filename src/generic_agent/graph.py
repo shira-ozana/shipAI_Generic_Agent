@@ -95,7 +95,8 @@ def build_agent(
         system_prompt: Instructions rendered into each Cursor run's prompt. A run
             invoked with an ``AgentContext`` (``context=``) uses that definition's
             assembled instructions and guardrails instead.
-        tools: Local custom tools by name. Pass ``{}`` for a text-only agent.
+        tools: Local custom tools by name. Pass ``{}`` for a text-only agent. A
+            definition whose ``tools`` is not ``None`` replaces them for its run.
         checkpointer: Optional checkpointer (e.g. ``InMemorySaver``). Leave unset
             when a host such as Agent Server manages persistence.
         max_history_messages: How many earlier messages to include per run.
@@ -114,13 +115,16 @@ def build_agent(
         prompt = render_prompt(instructions, messages, max_history_messages)
         if definition is not None:
             run_guardrails(definition, GuardrailPhase.PRE_RUN, _latest_human_text(messages))
+        run_tools = custom_tools
+        if definition is not None and definition.tools is not None:
+            run_tools = dict(definition.tools) or None
         with tempfile.TemporaryDirectory(prefix="generic-agent-") as scratch_dir:
             result = Agent.prompt(
                 prompt,
                 AgentOptions(
                     model=settings.model,
                     api_key=settings.api_key.get_secret_value(),
-                    local=LocalAgentOptions(cwd=scratch_dir, custom_tools=custom_tools),
+                    local=LocalAgentOptions(cwd=scratch_dir, custom_tools=run_tools),
                     tools=None if builtin_tools is None else list(builtin_tools),
                 ),
             )

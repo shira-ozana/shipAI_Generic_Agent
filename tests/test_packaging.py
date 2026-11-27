@@ -40,6 +40,19 @@ def test_pyproject_depends_on_cursor_sdk_not_anthropic() -> None:
     assert "anthropic" not in text
 
 
+def test_requirement_agent_instructions_are_package_data() -> None:
+    import generic_agent
+
+    base = Path(generic_agent.__file__).parent / "agents" / "requirement" / "instructions"
+    assert (base / "AGENTS.md").is_file()
+    assert len(list((base / "skills").glob("*/SKILL.md"))) == 8
+    assert {p.name for p in (base / "templates").iterdir()} == {
+        "requirement-template.md",
+        "clarifications-template.md",
+        "status-template.json",
+    }
+
+
 def test_agent_definitions_live_under_agents_and_their_assets_are_packaged() -> None:
     import generic_agent
 

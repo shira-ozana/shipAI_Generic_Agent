@@ -14,16 +14,19 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   `src/generic_agent/config.py`.
 - Runtime interface (`AgentDefinition`, `GenericAgent`, guardrails):
   `src/generic_agent/runtime/`. Definitions travel as invocation-scoped runtime
-  context, never in graph state. Concrete agents live in
-  `src/generic_agent/agents/<name>/` (currently `task_split`; their assets in
-  `src/generic_agent/prompts/<name>/`).
+  context, never in graph state. A definition may carry its own `tools` for
+  per-run resources. Concrete agents live in
+  `src/generic_agent/agents/<name>/` (`task_split`, assets in
+  `src/generic_agent/prompts/task_split/`; `requirement`, instructions and
+  skills as Markdown in `agents/requirement/instructions/`, guide
+  `docs/modules/requirement.md`).
 - Agent instructions: `src/generic_agent/prompts/default_system.md` (package
   data, loaded with `importlib.resources`). Don't inline long prompts in Python.
 - Tools: local `cursor_sdk.CustomTool`s in `src/generic_agent/tools.py`;
   register new ones in `default_tools()`. `{}` means text-only.
 - Entry points: CLI in `__main__.py`, Studio factory in `studio.py` (referenced
   by `langgraph.json`), local HTTP API in `api.py` (FastAPI). All must call
-  `build_agent`.
+  `build_agent` (directly or through `GenericAgent`).
 - Task Split (`agents/task_split/`): prompt, rules and skills in
   `prompts/task_split/`; document validation in `schema.py`; scoped read-only
   repo tools in `repository.py`. Its backend (draft store, approval, review view,
@@ -58,6 +61,7 @@ python -m pytest                 # offline tests, mocked Cursor SDK
 python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000   # HTTP API, one worker
 python -m generic_agent --list-models   # needs CURSOR_API_KEY
 python -m generic_agent          # CLI (needs CURSOR_API_KEY and CURSOR_MODEL)
+python -m generic_agent requirement --repo-url URL --feature-id ID --requirement-text TEXT
 langgraph dev                    # Studio / Agent Server
 ```
 
@@ -71,3 +75,6 @@ langgraph dev                    # Studio / Agent Server
   `get_secret_value()` only when building `AgentOptions`. Error text must not
   include secrets.
 - LangSmith credentials are only for Studio and are separate from the Cursor key.
+- Repository credentials for the Requirement Agent are used only by code for
+  git (child-process env + `git -c credential.helper`), never in state, prompts,
+  tool output, logs, errors, commit messages, remote URLs or `.git/config`.
