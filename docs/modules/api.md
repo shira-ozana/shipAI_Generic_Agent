@@ -22,6 +22,10 @@ Requirement Agent endpoints (`POST /api/requirement/start`,
 `POST /api/requirement/chat`) are documented in [requirement.md](requirement.md).
 They share the `ThreadGuard`. Request-validation errors (`422`) never echo the
 request input, because a start body can carry repository credentials.
+The Task Split review/approval routes (`/api/task-plans`) are included by
+`create_app(settings, task_plans=None)`; see [task-plans.md](task-plans.md).
+`create_app` also mounts the INIT router (`POST /api/init`, `GET /api/init/{runId}`,
+`GET /api/init/{runId}/report`); see [init_agent.md](init_agent.md).
 
 Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 `sdlc-ui`; update `README.md` and `docs/architecture.md` too.
@@ -47,7 +51,7 @@ Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 - All graph exceptions and empty reply text map to `502` with the fixed message.
   Never return `describe_error`, SDK messages or run error text to the client;
   log them server-side only.
-- CORS allows only `http://localhost:<port>` and `http://127.0.0.1:<port>`.
+- CORS allows only `http://localhost:<port>` and `http://127.0.0.1:<port>`, `GET`/`POST`, and the `Content-Type` and `X-User-Id` headers.
 - Single process only: history and the guard are in memory.
 
 ## Tests

@@ -25,6 +25,9 @@ from generic_agent.runtime.agent_definition import (
     assemble_instructions,
     run_guardrails,
 )
+from generic_agent import _windows_compat
+
+_windows_compat.install()  # cursor-sdk bridge launch on Windows (WinError 10038)
 
 DEFAULT_MAX_HISTORY_MESSAGES = 40
 """Most recent prior messages passed to each Cursor run."""

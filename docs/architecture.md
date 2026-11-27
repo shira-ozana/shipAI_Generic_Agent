@@ -15,7 +15,8 @@ In scope:
 - Three entry points that run the *same* graph: a CLI, LangGraph Studio and a
   local HTTP API.
 
-Out of scope: persistence beyond in-memory checkpointing, cloud agents,
+Out of scope: conversation persistence beyond in-memory checkpointing (the Task
+Split draft/task store is separate), cloud agents,
 retrieval, multi-agent orchestration, and anything that requires LangSmith for
 the CLI or the tests.
 
@@ -24,23 +25,37 @@ the CLI or the tests.
 | Module | Responsibility |
 | --- | --- |
 | `graph.py` | `build_agent` factory, the `run_cursor_agent` node, prompt rendering (`render_prompt`), default-prompt loading. The only module that calls `Agent.prompt`. |
+| `runner.py` | INIT runner (`generic_agent.runner.GenericAgent`, not the `runtime` one): INIT creates one instance and call `run(prompt, instructions=, rules=, guidelines=, skills=, shared_skills=, history=)`. It renders the material into one system prompt (`compose_instructions`), runs a `build_agent` graph with no checkpointer and returns `RunResult(text, metadata)`. |
 | `config.py` | `.env` loading, `Settings`, `list_model_ids()` (`Cursor.models.list()`), error translation (`ConfigError`, `CursorRunError`, `describe_error`). |
 | `tools.py` | Local Cursor SDK custom tools (`word_count`) and `default_tools()`. |
 | `runtime/agent_definition.py` | `AgentDefinition` (prompt, skills, rules, guardrails), `Skill`, `Guardrail`, `GuardrailPhase`, `GuardrailResult`, `AgentContext` (runtime context), `assemble_instructions`, `run_guardrails`. Plain data and helpers; never imports `graph`. |
 | `runtime/generic_agent.py` | `GenericAgent`: synchronous runner. `run(definition, messages, config=None)` invokes the graph with the definition as runtime context. |
 | `agents/requirement/` | The Requirement Agent: packaged instructions and skills, loader, per-thread clone tools, git publishing, `RequirementAgent` runner and its CLI. See [modules/requirement.md](modules/requirement.md). |
+| `agents/task_split/` | The Task Split agent: `definition.py` (prompt/rules/skills loading, guardrails, request builder), `schema.py` (dependency document + validation), `repository.py` (scoped read-only repo tools), `planner.py` (`TaskSplitPlanner`). See [modules/task-split.md](modules/task-split.md). |
+| `task_plans/` | Backend for review and approval: `store.py` (SQLite drafts + tasks, one transaction per approval), `service.py`, `review.py` (grouped review view), `routes.py` (`/api/task-plans`). See [modules/task-plans.md](modules/task-plans.md). |
 | `studio.py` | `make_graph()` factory referenced by `langgraph.json`. No checkpointer. |
 | `api.py` | FastAPI app (`app`, `create_app`): compiles the graph once at startup with `InMemorySaver` and serves `/api/health`, `/api/chat` and the Requirement Agent's `/api/requirement/start` and `/api/requirement/chat`. |
 | `__main__.py` | CLI (`python -m generic_agent`, `--list-models`): compiles once, runs the chat loop, renders replies and errors. |
 | `prompts/default_system.md` | Default agent instructions, shipped as package data. |
+| `prompts/task_split/` | Task Split prompt, `rules.md` and `skills/*.md`, shipped as package data. |
 
 Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`, `graph`;
 `runtime.generic_agent` -> `graph`, `runtime.agent_definition`;
 `graph` -> `config` (for `Settings` and `CursorRunError`) and
 `runtime.agent_definition`; `runtime.agent_definition` -> `config`. (`GenericAgent`
-imports `graph` inside `__init__` to avoid a circular import.)
+imports `graph` inside `__init__` to avoid a circular import.) `runner` (the INIT runner)
+-> `graph`, `config`.
 
 Per-module guides for changing each piece: [`modules/`](modules/README.md).
+
+## INIT agent
+
+`src/init_agent/` is a second graph built on top of this one. INIT creates one
+`GenericAgent` instance per run; each LLM node calls `agent.run(task, **prompt_pack.run_input(node))`,
+so the node's instructions, rules, guidelines and skills go to the Generic Agent as data. It clones `REPO_URL`,
+writes an agent harness into the repository (root and code folders; report in
+`platform/init/`) on branch `shipAI`, and pushes it. Its router is
+mounted into `api.py` as `/api/init`. See [`modules/init_agent.md`](modules/init_agent.md).
 
 ## Graph state
 
@@ -144,6 +159,25 @@ result = runner.run(
 - Cursor options (settings, custom tools, scratch `cwd`, `tools=[]` by default)
   are exactly those of `build_agent`; `GenericAgent` forwards `builtin_tools`,
   `checkpointer` and `max_history_messages`.
+
+## Task Split agent and approval flow
+
+Task Split is a concrete `AgentDefinition` run by `GenericAgent` on the same
+graph; nothing in the graph changed. `TaskSplitPlanner.plan` builds a
+`<planning_request>` (HLS documents, repository ID and revision only), creates a
+fresh runner whose only custom tools are the read-only `repo_*` tools of one
+`RepositoryAccess`, and runs the definition. Its post-run guardrail parses the
+JSON reply and enforces ownership, unique IDs, valid dependencies, an acyclic
+graph and in-scope citations; a failure raises `GuardrailError` and nothing is
+returned. The result is a plan or clarification questions, never tasks.
+
+`task_plans` stores a plan as a *pending draft* with a backend-assigned version
+and the inspected revision. Tasks, groups and dependencies are written only by
+`TaskPlanStore.approve(plan_id, version, user)`, in one transaction, for an
+authorized user and that exact pending version; repeating the same approval
+writes nothing. Pending, declined and superseded drafts have zero task rows. The
+UI (separate repo) reads `/api/task-plans/...` and approves by version. Details
+and the UI handoff: [modules/task-plans.md](modules/task-plans.md).
 
 ## Custom tools
 
@@ -249,4 +283,6 @@ CORS), the runtime (`tests/test_runtime.py`: definition validation, assembly
 order, prompt/rules/skills reaching the SDK, isolation across runs and threads,
 no definition in checkpoints, a failed guardrail at each phase), the
 Requirement Agent (`tests/test_requirement_agent.py`, local bare git remote),
-and packaging / `langgraph.json`.
+and packaging / `langgraph.json`. Task Split has its own offline tests
+(`tests/test_task_split_*.py`, `tests/test_task_plans.py`) with an
+HLS/repository fixture in `tests/fixtures/task_split/`.

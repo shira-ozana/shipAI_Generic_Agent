@@ -582,7 +582,7 @@ def test_git_errors_are_scrubbed(tmp_path) -> None:
 def api(settings, req_settings, mock_cursor):
     def make(responder):
         fake = mock_cursor(responder)
-        client = TestClient(create_app(settings, req_settings))
+        client = TestClient(create_app(settings, requirement_settings=req_settings))
         client.__enter__()
         return client, fake
 

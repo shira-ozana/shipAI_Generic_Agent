@@ -1,0 +1,1 @@
+{"title": "OrderCreated", "type": "object", "required": ["orderId", "customerEmail"]}

@@ -11,3 +11,6 @@ dist/
 .pytest_cache/
 .langgraph_api/
 .DS_Store
+task_plans.sqlite3*
+*.sqlite3
+workspaces/

@@ -1,1 +1,1 @@
-"""Concrete agents built on the Generic Agent runtime."""
+"""Concrete agent definitions. Each agent lives in its own subpackage."""

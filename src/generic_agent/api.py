@@ -41,9 +41,12 @@ from generic_agent.agents.requirement import (
     SessionError,
 )
 from generic_agent.agents.requirement.agent import NO_RUN_MESSAGE
-from generic_agent.config import Settings, describe_error, load_settings
+from generic_agent.config import Settings, describe_error, load_settings, load_task_split_settings
 from generic_agent.graph import build_agent, load_default_prompt
+from generic_agent.task_plans.routes import USER_HEADER, build_router
+from generic_agent.task_plans.service import TaskPlanService, create_task_plan_service
 from generic_agent.tools import default_tools
+from init_agent.api import router as init_router
 
 logger = logging.getLogger(__name__)
 
@@ -156,13 +159,21 @@ class ThreadGuard:
 
 
 def create_app(
-    settings: Settings | None = None, requirement_settings: RequirementSettings | None = None
+    settings: Settings | None = None,
+    task_plans: TaskPlanService | None = None,
+    requirement_settings: RequirementSettings | None = None,
 ) -> FastAPI:
     """Create the API app.
 
     ``settings`` is loaded from ``CURSOR_API_KEY`` / ``CURSOR_MODEL`` (shell or
     ``.env``) at startup when omitted. The graph is compiled once at startup.
-    ``requirement_settings`` defaults to ``load_requirement_settings()``.
+
+    ``task_plans`` serves ``/api/task-plans``. When omitted it is built from
+    ``TASK_SPLIT_REPOSITORIES`` / ``TASK_SPLIT_DB`` if configured; otherwise
+    those endpoints answer ``503``.
+
+    ``requirement_settings`` (Requirement Agent) defaults to
+    ``load_requirement_settings()``.
     """
 
     @asynccontextmanager
@@ -176,9 +187,17 @@ def create_app(
         )
         app.state.requirement = RequirementAgent(resolved, requirement_settings)
         app.state.guard = ThreadGuard()
+        owned_plans = None
+        if task_plans is None:
+            task_split = load_task_split_settings()
+            if task_split is not None:
+                owned_plans = create_task_plan_service(resolved, task_split)
+        app.state.task_plans = task_plans or owned_plans
         try:
             yield
         finally:
+            if owned_plans is not None:
+                owned_plans.store.close()
             close_default_client()
 
     app = FastAPI(title="generic-langgraph-agent", lifespan=lifespan)
@@ -186,8 +205,12 @@ def create_app(
         CORSMiddleware,
         allow_origin_regex=LOCAL_ORIGIN_REGEX,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", USER_HEADER],
     )
+    app.include_router(build_router())
+
+    # INIT agent (POST /api/init, GET /api/init/{runId}); see src/init_agent/api.py
+    app.include_router(init_router)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

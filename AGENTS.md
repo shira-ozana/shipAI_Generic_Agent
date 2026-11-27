@@ -8,15 +8,18 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 
 - Graph logic (`run_cursor_agent`, `build_agent`, prompt rendering):
   `src/generic_agent/graph.py`. It is the only place that calls `Agent.prompt`.
+- `GenericAgent` (`run()` / `arun()` for other agents, e.g. INIT):
+  `src/generic_agent/runner.py`. It builds its graphs with `build_agent`.
 - Settings, `.env` loading, model listing, error messages:
   `src/generic_agent/config.py`.
 - Runtime interface (`AgentDefinition`, `GenericAgent`, guardrails):
   `src/generic_agent/runtime/`. Definitions travel as invocation-scoped runtime
   context, never in graph state. A definition may carry its own `tools` for
-  per-run resources.
-- Concrete agents: `src/generic_agent/agents/<name>/`. The Requirement Agent
-  lives in `agents/requirement/` (guide: `docs/modules/requirement.md`); its
-  instructions and skills are Markdown under `agents/requirement/instructions/`.
+  per-run resources. Concrete agents live in
+  `src/generic_agent/agents/<name>/` (`task_split`, assets in
+  `src/generic_agent/prompts/task_split/`; `requirement`, instructions and
+  skills as Markdown in `agents/requirement/instructions/`, guide
+  `docs/modules/requirement.md`).
 - Agent instructions: `src/generic_agent/prompts/default_system.md` (package
   data, loaded with `importlib.resources`). Don't inline long prompts in Python.
 - Tools: local `cursor_sdk.CustomTool`s in `src/generic_agent/tools.py`;
@@ -24,6 +27,15 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 - Entry points: CLI in `__main__.py`, Studio factory in `studio.py` (referenced
   by `langgraph.json`), local HTTP API in `api.py` (FastAPI). All must call
   `build_agent` (directly or through `GenericAgent`).
+- Task Split (`agents/task_split/`): prompt, rules and skills in
+  `prompts/task_split/`; document validation in `schema.py`; scoped read-only
+  repo tools in `repository.py`. Its backend (draft store, approval, review view,
+  `/api/task-plans`) is `src/generic_agent/task_plans/`. Tasks are saved only by
+  `TaskPlanStore.approve`.
+- INIT agent: `src/init_agent/` (graph, prompt pack in `prompts/`, writer,
+  `/api/init` router mounted by `api.py`). Rules, guidelines and skills for the
+  INIT prompt are Markdown files in `src/init_agent/prompts/`, not Python strings.
+  Read `docs/modules/init_agent.md` first.
 - Tests: `tests/`, offline only. Use the `mock_cursor` fixture (`conftest.py`,
   `fakes.py`), which patches `generic_agent.graph.Agent`.
 
@@ -36,6 +48,9 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
   scratch `cwd`; don't widen this without a reason.
 - Don't pass a checkpointer in `studio.py` (Agent Server provides one).
 - Tests must never call Cursor or need network/LangSmith.
+- Task Split: the model never sees repository paths, URLs or credentials; repo
+  tools stay read-only and scoped; a pending, declined or superseded draft writes
+  zero task rows; approval is per exact plan version and idempotent.
 
 ## Commands
 

@@ -16,20 +16,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27"]
 studio = ["langgraph-cli[inmem]>=0.4"]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
 
 [project.scripts]
 generic-agent = "generic_agent.__main__:main"
+init-agent = "init_agent.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/generic_agent"]
+packages = ["src/generic_agent", "src/init_agent"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/generic_agent", "tests", "docs", "README.md", "AGENTS.md", "langgraph.json", ".env.example"]
+include = ["src/generic_agent", "src/init_agent", "tests", "docs", "README.md", "AGENTS.md", "langgraph.json", ".env.example"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
 addopts = "-q"
+norecursedirs = ["tests/fixtures"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -51,3 +51,15 @@ def test_requirement_agent_instructions_are_package_data() -> None:
         "clarifications-template.md",
         "status-template.json",
     }
+
+
+def test_agent_definitions_live_under_agents_and_their_assets_are_packaged() -> None:
+    import generic_agent
+
+    package = Path(generic_agent.__file__).parent
+    assert (package / "agents" / "task_split" / "definition.py").is_file()
+    assets = package / "prompts" / "task_split"
+    assert (assets / "prompt.md").is_file() and (assets / "rules.md").is_file()
+    from generic_agent.agents.task_split.definition import SKILL_NAMES
+
+    assert all((assets / "skills" / f"{name}.md").is_file() for name in SKILL_NAMES)
