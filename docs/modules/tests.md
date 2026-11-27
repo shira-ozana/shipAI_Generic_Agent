@@ -33,7 +33,8 @@ Needs `pip install -e ".[dev,studio,api]"` (the API tests use FastAPI's
 | `test_config.py` | `.env`/shell loading, placeholders, model listing, `describe_error` |
 | `test_cli.py` | chat loop, error handling, `main` exit codes, `--list-models` |
 | `test_api.py` | HTTP contract: reply, context, isolation, validation, 502, 409, CORS |
-| `test_packaging.py` | `langgraph.json`, Studio factory, packaged prompt, dependencies |
+| `test_packaging.py` | `langgraph.json`, Studio factory, packaged prompt and Requirement Agent instructions, dependencies |
+| `test_requirement_agent.py` | Requirement Agent: loader, pre-flight, tool confinement, publishing, question rounds, credentials, API, CLI (uses `requirement_fixtures.py`: a local bare git remote with a `ShipAi` branch) |
 
 ## Writing a test
 

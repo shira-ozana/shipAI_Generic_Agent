@@ -8,6 +8,7 @@ picture, then the guide for the piece you are touching.
 | --- | --- | --- |
 | [graph.md](graph.md) | `src/generic_agent/graph.py` | change how a turn runs, how prompts are built, or which Cursor options are used |
 | [runtime.md](runtime.md) | `src/generic_agent/runtime/` | change agent definitions, guardrails or the `GenericAgent` runner |
+| [requirement.md](requirement.md) | `src/generic_agent/agents/requirement/` | change the Requirement Agent, its instructions, skills, tools or git publishing |
 | [config.md](config.md) | `src/generic_agent/config.py` | touch credentials, `.env` loading, model listing or error text |
 | [tools.md](tools.md) | `src/generic_agent/tools.py` | add or change a Cursor custom tool |
 | [prompt.md](prompt.md) | `src/generic_agent/prompts/default_system.md` | change the agent's instructions |

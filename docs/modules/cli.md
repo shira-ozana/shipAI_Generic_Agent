@@ -10,7 +10,7 @@ Terminal chat (`python -m generic_agent`) and `--list-models`.
 
 | Symbol | What it does |
 | --- | --- |
-| `main(argv=None) -> int` | Parses args, loads settings, builds the agent, runs the session, closes the SDK client. |
+| `main(argv=None) -> int` | Parses args, loads settings, builds the agent, runs the session, closes the SDK client. A first argument `requirement` delegates to `generic_agent.agents.requirement.cli.main` (see [requirement.md](requirement.md)). |
 | `run_session(agent, *, thread_id=None, input_fn=input, output_fn=print)` | The chat loop; injectable I/O for tests. |
 | `EXIT_COMMANDS` | `exit`, `quit`. |
 

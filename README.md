@@ -160,6 +160,23 @@ to keep conversation history per thread. `max_history_messages=` (default 40)
 limits how much earlier conversation goes into each run. A run that does not
 finish raises `generic_agent.config.CursorRunError`.
 
+## Requirement Agent
+
+`src/generic_agent/agents/requirement/` turns a customer request into numbered
+business requirements, published to `.platform/{feature_id}/requierment/` on the
+repository's `ShipAi` branch. Start it from the UI with
+`POST /api/requirement/start` and send answers with `POST /api/requirement/chat`,
+or from the terminal:
+
+```bash
+python -m generic_agent requirement --repo-url https://github.com/org/repo \
+  --feature-id ORD-42 --requirement-text "Customers can cancel an order before it ships."
+```
+
+Repository credentials for the CLI come from `REQUIREMENT_GIT_USERNAME` /
+`REQUIREMENT_GIT_TOKEN` (shell or `.env`). See
+[docs/modules/requirement.md](docs/modules/requirement.md).
+
 ## Add a tool
 
 Define a `cursor_sdk.CustomTool` (description, JSON input schema, `execute`) in

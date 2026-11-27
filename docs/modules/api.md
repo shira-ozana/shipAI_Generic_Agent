@@ -18,6 +18,11 @@ python -m uvicorn generic_agent.api:app --host 127.0.0.1 --port 8000
 | `GET /api/health` | - | `200 {"status":"ok"}` (never calls Cursor) | - |
 | `POST /api/chat` | `{"threadId":"<UUID>","message":"<text>"}` | `200 {"threadId":"<same UUID>","reply":"<text>"}` | `422` invalid input, `409` thread busy, `502` failed or empty run |
 
+Requirement Agent endpoints (`POST /api/requirement/start`,
+`POST /api/requirement/chat`) are documented in [requirement.md](requirement.md).
+They share the `ThreadGuard`. Request-validation errors (`422`) never echo the
+request input, because a start body can carry repository credentials.
+
 Error bodies are `{"detail": ...}`. Changing field names or status codes breaks
 `sdlc-ui`; update `README.md` and `docs/architecture.md` too.
 

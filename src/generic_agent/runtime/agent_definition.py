@@ -12,6 +12,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from types import MappingProxyType
+
+from cursor_sdk import CustomTool
 
 from generic_agent.config import GuardrailError
 
@@ -78,6 +81,10 @@ class AgentDefinition:
             also accepted and normalised to ``Skill`` objects.
         rules: Instructions included on every run of this definition.
         guardrails: Pre-run and post-run checks.
+        tools: Optional custom tools for runs of this definition. ``None`` (the
+            default) uses the tools the graph was built with; a mapping (``{}``
+            for text-only) replaces them for this run only. Lets an agent bind
+            tools to per-run resources such as a working directory.
 
     Collections are normalised to tuples (and may be empty), so a definition
     cannot change after it has been validated.
@@ -87,9 +94,18 @@ class AgentDefinition:
     skills: tuple[Skill, ...] = field(default=())
     rules: tuple[str, ...] = field(default=())
     guardrails: tuple[Guardrail, ...] = field(default=())
+    tools: Mapping[str, CustomTool] | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         _require_text(self.prompt, "prompt")
+        if self.tools is not None:
+            if not isinstance(self.tools, Mapping):
+                raise TypeError("tools must be a mapping of name to CustomTool, or None")
+            for name, tool in self.tools.items():
+                _require_text(name, "tool name")
+                if not isinstance(tool, CustomTool):
+                    raise TypeError(f"tool {name!r} must be a CustomTool")
+            object.__setattr__(self, "tools", MappingProxyType(dict(self.tools)))
 
         skills = self.skills
         if isinstance(skills, Mapping):

@@ -5,8 +5,11 @@ once at startup with an ``InMemorySaver``; each chat request sends only the new
 ``HumanMessage`` and uses the request's ``threadId`` as LangGraph's
 ``thread_id``, so checkpoints remain the only conversation memory.
 
-Run it with a single worker: history and the in-flight guard live in this
-process's memory.
+The Requirement Agent is served on ``/api/requirement/start`` (inputs, pre-flight,
+first turn) and ``/api/requirement/chat`` (answers on the same thread).
+
+Run it with a single worker: history, per-thread clones, credentials and the
+in-flight guard live in this process's memory.
 """
 
 from __future__ import annotations
@@ -20,11 +23,24 @@ from uuid import UUID
 
 from cursor_sdk import close_default_client
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictStr, field_validator
 
+from generic_agent.agents.requirement import (
+    GitCredentials,
+    InputError,
+    PreflightError,
+    RequirementAgent,
+    RequirementInputs,
+    RequirementSettings,
+    SessionError,
+)
+from generic_agent.agents.requirement.agent import NO_RUN_MESSAGE
 from generic_agent.config import Settings, describe_error, load_settings
 from generic_agent.graph import build_agent, load_default_prompt
 from generic_agent.tools import default_tools
@@ -61,6 +77,58 @@ class ChatRequest(BaseModel):
         return value
 
 
+class _ThreadRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    thread_id: Annotated[UUID, Field(alias="threadId")]
+
+    @field_validator("thread_id", mode="before")
+    @classmethod
+    def _thread_id_is_uuid_string(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            raise ValueError("threadId must be a UUID string")
+        return value
+
+
+class RepositoryCredentials(BaseModel):
+    """Git credentials; used only by code for git and never echoed or stored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: StrictStr = ""
+    token: SecretStr = SecretStr("")
+
+
+class RequirementStartRequest(_ThreadRequest):
+    """Body of ``POST /api/requirement/start``."""
+
+    repo_url: Annotated[StrictStr, Field(alias="repoUrl")]
+    feature_id: Annotated[StrictStr, Field(alias="featureId")]
+    requirement_text: Annotated[StrictStr, Field(alias="requirementText")]
+    credentials: RepositoryCredentials | None = None
+
+
+class RequirementChatRequest(_ThreadRequest):
+    """Body of ``POST /api/requirement/chat``."""
+
+    message: StrictStr
+
+    @field_validator("message")
+    @classmethod
+    def _message_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("message must not be blank")
+        return value
+
+
+class RequirementResponse(BaseModel):
+    """Body returned by both requirement endpoints."""
+
+    threadId: str  # noqa: N815 - shared HTTP contract uses camelCase
+    reply: str
+    status: str | None
+
+
 class ChatResponse(BaseModel):
     """Body returned by ``POST /api/chat``."""
 
@@ -87,21 +155,26 @@ class ThreadGuard:
             self._active.discard(thread_id)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, requirement_settings: RequirementSettings | None = None
+) -> FastAPI:
     """Create the API app.
 
     ``settings`` is loaded from ``CURSOR_API_KEY`` / ``CURSOR_MODEL`` (shell or
     ``.env``) at startup when omitted. The graph is compiled once at startup.
+    ``requirement_settings`` defaults to ``load_requirement_settings()``.
     """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        resolved = settings or load_settings()
         app.state.agent = build_agent(
-            settings or load_settings(),
+            resolved,
             load_default_prompt(),
             default_tools(),
             checkpointer=InMemorySaver(),
         )
+        app.state.requirement = RequirementAgent(resolved, requirement_settings)
         app.state.guard = ThreadGuard()
         try:
             yield
@@ -115,6 +188,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Drop the echoed input: a request body can carry repository credentials.
+        errors = [{k: v for k, v in e.items() if k not in {"input", "ctx", "url"}} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -144,6 +223,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.error("Cursor returned empty text for thread %s", thread_id)
             raise HTTPException(status_code=502, detail=RUN_FAILED_MESSAGE)
         return ChatResponse(threadId=thread_id, reply=reply)
+
+    def _requirement_turn(request: Request, thread_id: str, call) -> RequirementResponse:
+        guard: ThreadGuard = request.app.state.guard
+        if not guard.acquire(thread_id):
+            raise HTTPException(status_code=409, detail=BUSY_MESSAGE)
+        try:
+            turn = call(request.app.state.requirement)
+        except InputError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except PreflightError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except SessionError as exc:
+            code = 404 if str(exc) == NO_RUN_MESSAGE else 409
+            raise HTTPException(status_code=code, detail=str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 - never leak raw SDK errors to clients
+            logger.error("Requirement run failed for thread %s: %s", thread_id, describe_error(exc))
+            raise HTTPException(status_code=502, detail=RUN_FAILED_MESSAGE) from None
+        finally:
+            guard.release(thread_id)
+        if not turn.reply:
+            logger.error("Cursor returned empty text for requirement thread %s", thread_id)
+            raise HTTPException(status_code=502, detail=RUN_FAILED_MESSAGE)
+        return RequirementResponse(threadId=thread_id, reply=turn.reply, status=turn.status)
+
+    @app.post("/api/requirement/start", response_model=RequirementResponse)
+    def requirement_start(body: RequirementStartRequest, request: Request) -> RequirementResponse:
+        thread_id = str(body.thread_id)
+        creds = body.credentials or RepositoryCredentials()
+        try:
+            inputs = RequirementInputs(
+                repo_url=body.repo_url,
+                feature_id=body.feature_id,
+                requirement_text=body.requirement_text,
+                credentials=GitCredentials(username=creds.username, token=creds.token),
+            )
+        except InputError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        return _requirement_turn(request, thread_id, lambda agent: agent.start(thread_id, inputs))
+
+    @app.post("/api/requirement/chat", response_model=RequirementResponse)
+    def requirement_chat(body: RequirementChatRequest, request: Request) -> RequirementResponse:
+        thread_id = str(body.thread_id)
+        return _requirement_turn(request, thread_id, lambda agent: agent.reply(thread_id, body.message))
 
     return app
 

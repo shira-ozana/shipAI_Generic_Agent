@@ -40,8 +40,14 @@ def test_pyproject_depends_on_cursor_sdk_not_anthropic() -> None:
     assert "anthropic" not in text
 
 
-def test_agents_package_dir_is_reserved_and_empty() -> None:
+def test_requirement_agent_instructions_are_package_data() -> None:
     import generic_agent
 
-    agents = Path(generic_agent.__file__).parent / "agents"
-    assert [p.name for p in agents.iterdir()] == [".gitkeep"]
+    base = Path(generic_agent.__file__).parent / "agents" / "requirement" / "instructions"
+    assert (base / "AGENTS.md").is_file()
+    assert len(list((base / "skills").glob("*/SKILL.md"))) == 8
+    assert {p.name for p in (base / "templates").iterdir()} == {
+        "requirement-template.md",
+        "clarifications-template.md",
+        "status-template.json",
+    }
