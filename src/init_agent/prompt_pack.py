@@ -23,6 +23,8 @@ from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
 
+from generic_agent.runner import Section, SharedSkillRef, Skill, compose_instructions
+
 from .models import SharedSkill
 
 
@@ -126,30 +128,38 @@ class PromptPack:
         extra_guidelines: list[str] | None = None,
         shared_skills: list[SharedSkill] | None = None,
     ) -> str:
-        parts: list[str] = []
-        for d in self._select("core", node, file_path) + self._select("guardrail", node, file_path):
-            parts.append(d.body)
+        """The system prompt text that `GenericAgent.run(**run_input(...))` sends."""
+        return compose_instructions(**self.run_input(
+            node, platform_dir=platform_dir, file_path=file_path, extra_rules=extra_rules,
+            extra_guidelines=extra_guidelines, shared_skills=shared_skills,
+        ))
 
-        rules = self._select("rule", node, file_path)
-        if rules or extra_rules:
-            lines = ["# Rules (binding)"]
-            lines += [f"## {d.id}: {d.title}\n{d.body}" for d in rules]
-            lines += [f"## OP-R{i}: operator rule\n{r}" for i, r in enumerate(extra_rules or [], 1)]
-            parts.append("\n\n".join(lines))
+    def run_input(
+        self,
+        node: str,
+        *,
+        platform_dir: str = "platform",
+        file_path: str | None = None,
+        extra_rules: list[str] | None = None,
+        extra_guidelines: list[str] | None = None,
+        shared_skills: list[SharedSkill] | None = None,
+    ) -> dict:
+        """Keyword arguments for `GenericAgent.run()`: instructions, rules, guidelines, skills."""
+        def sub(text: str) -> str:
+            return text.replace("{platform_dir}", platform_dir)
 
-        guidelines = self._select("guideline", node, file_path)
-        if guidelines or extra_guidelines:
-            lines = ["# Guidelines (recommended)"]
-            lines += [f"## {d.id}: {d.title}\n{d.body}" for d in guidelines]
-            lines += [f"## OP-G{i}: operator guideline\n{g}" for i, g in enumerate(extra_guidelines or [], 1)]
-            parts.append("\n\n".join(lines))
-
-        for d in self._select("skill", node, file_path):
-            parts.append(d.body)
-
-        if shared_skills:
-            lines = ["# Shared skill catalog (reuse by id; do not copy)"]
-            lines += [f"- `{s.id}`: {s.description} ({s.ref})" for s in shared_skills]
-            parts.append("\n".join(lines))
-
-        return "\n\n---\n\n".join(parts).replace("{platform_dir}", platform_dir)
+        core = self._select("core", node, file_path) + self._select("guardrail", node, file_path)
+        rules = [Section(d.id, d.title, sub(d.body)) for d in self._select("rule", node, file_path)]
+        rules += [Section(f"OP-R{i}", "operator rule", sub(r)) for i, r in enumerate(extra_rules or [], 1)]
+        guidelines = [Section(d.id, d.title, sub(d.body)) for d in self._select("guideline", node, file_path)]
+        guidelines += [Section(f"OP-G{i}", "operator guideline", sub(g))
+                       for i, g in enumerate(extra_guidelines or [], 1)]
+        return {
+            "instructions": sub("\n\n---\n\n".join(d.body for d in core)),
+            "rules": rules,
+            "guidelines": guidelines,
+            "skills": [Skill(name=d.id, body=sub(d.body), description=d.title)
+                       for d in self._select("skill", node, file_path)],
+            "shared_skills": [SharedSkillRef(id=s.id, description=s.description, ref=s.ref)
+                              for s in shared_skills or []],
+        }

@@ -7,11 +7,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from langchain_core.language_models.chat_models import BaseChatModel
-
 from .config import InitSettings, load_init_settings
 from .graph import ProgressFn, build_init_graph
-from .llm import GenericAgentModel
+from .llm import GenericAgent
 from .models import Alert, InitRequest, InitResult
 from .prompt_pack import PromptPack
 
@@ -27,7 +25,7 @@ def _status(alerts: list[Alert], writes: list[dict], fatal: str | None) -> str:
 async def arun_init(
     request: InitRequest | dict,
     *,
-    llm: BaseChatModel | None = None,
+    agent: GenericAgent | None = None,
     settings: InitSettings | None = None,
     run_id: str | None = None,
     on_progress: ProgressFn | None = None,
@@ -36,8 +34,9 @@ async def arun_init(
     settings = settings or load_init_settings()
     run_id = run_id or uuid.uuid4().hex[:12]
     thread_id = req.thread_id or str(uuid.uuid5(uuid.NAMESPACE_URL, f"init-agent/{run_id}"))
-    llm = llm or GenericAgentModel(thread_id=thread_id)
-    graph = build_init_graph(llm, settings, PromptPack.load(settings.prompts_override_dir), on_progress)
+    # INIT creates its Generic Agent instance; every LLM node calls agent.run(...).
+    agent = agent or GenericAgent()
+    graph = build_init_graph(agent, settings, PromptPack.load(settings.prompts_override_dir), on_progress)
 
     fatal = None
     state: dict[str, Any] = {}
@@ -66,7 +65,7 @@ async def arun_init(
         artifacts=artifacts,
         output={
             "summary": (f"INIT {'failed: ' + fatal if fatal else 'finished'}. "
-                        f"{created} files created, {updated} updated under {settings.platform_dir}/."
+                        f"{created} harness files created, {updated} updated in the repository."
                         + (f" Branch `{published.get('branch')}` pushed." if published.get("pushed") else "")),
             "report_path": report,
             "report_file": str(Path(state["repo_root"]) / report) if report and state.get("repo_root") else None,

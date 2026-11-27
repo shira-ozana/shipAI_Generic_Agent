@@ -1,7 +1,7 @@
 """Git working copy for one INIT run.
 
 Flow: clone REPO_URL (public) at REPO_BASE_REF -> create/checkout branch `shipAI`
--> INIT writes under platform/ -> commit -> push the branch.
+-> INIT writes the harness (root, code folders) and platform/init/ -> commit -> push the branch.
 """
 
 from __future__ import annotations

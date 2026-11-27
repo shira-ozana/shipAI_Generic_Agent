@@ -2,9 +2,10 @@
 
 START -> prepare_workspace -> scan_repository -> analyze_repository -> derive_skills
       -> assess_automation -> plan_harness -> assess_coverage -> apply_harness
-      -> write_init_report -> publish_branch -> END
+      -> repair_links -> write_init_report -> publish_branch -> END
 
-LLM nodes call the Generic Agent through `GenericAgentModel` (LangChain BaseChatModel).
+LLM nodes call `GenericAgent.run()` (generic_agent.runner) on the instance INIT creates,
+with the node's instructions, rules, guidelines and skills from the prompt pack.
 Every other step is deterministic Python.
 """
 
@@ -18,23 +19,60 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from .config import InitSettings
-from .llm import ainvoke_structured, ainvoke_text, schema_instructions
+from .llm import GenericAgent, ainvoke_structured, ainvoke_text
 from .models import (
     Alert, AutomationResult, CommandInfo, ComponentAnalysis, HarnessPlan, HookProposal, InitRequest, PlannedFile,
     RepoAnalysis, SkillSpec, SkillsResult, WriteResult,
 )
 from .prompt_pack import PromptPack
-from .render import render_hooks, render_report, render_skill, ste_sentence_check
+from .render import link, render_hooks, render_report, render_skill, ste_sentence_check
 from .repo.excerpts import evidence_block, pack, read_excerpt
 from .repo.git_workspace import GitError, GitWorkspace
 from .repo.scanner import FileEntry, Inventory, scan_repository
-from .repo.writer import check_links, normalize, write_file
+from .repo.writer import (
+    PathRejected, broken_targets, check_links, code_folder_of, generated_block, is_generated_only, is_harness_path,
+    is_local_agents, is_skill_path, normalize, replace_generated_block, unlink, validate, write_file,
+)
+
+
+def hub_folders(components: list[str], root: Path, min_components: int) -> dict[str, list[str]]:
+    """Folders (not the root) that hold at least `min_components` components below them."""
+    comps = sorted(c for c in components if c != "(root)")
+    folders = {"/".join(PurePosixPath(c).parts[:i]) for c in comps for i in range(1, len(PurePosixPath(c).parts))}
+    out: dict[str, list[str]] = {}
+    for f in sorted(folders):
+        inside = [c for c in comps if c.startswith(f + "/")]
+        if len(inside) >= max(1, min_components) and (root / f).is_dir():
+            out[f] = inside
+    return out
+
+
+def skill_folder(scope: list[str], local_folders: set[str], root: Path) -> str | None:
+    """Deepest folder with a local AGENTS.md that holds the whole scope of a skill; None = root `skills/`."""
+    bases: list[tuple[str, ...]] = []
+    for s in scope:
+        parts: list[str] = []
+        for part in PurePosixPath(s.strip().lstrip("./").rstrip("/")).parts:
+            if any(ch in part for ch in "*?[{"):
+                break
+            parts.append(part)
+        if parts and (root / "/".join(parts)).is_file():
+            parts.pop()                                     # a file: its folder is the base
+        bases.append(tuple(parts))
+    if not bases:
+        return None
+    common: list[str] = []
+    for level in zip(*bases):
+        if len(set(level)) != 1:
+            break
+        common.append(level[0])
+    base = "/".join(common)
+    homes = [f for f in local_folders if base == f or base.startswith(f + "/")]
+    return max(homes, key=len) if homes else None
 
 
 class InitState(TypedDict, total=False):
@@ -53,6 +91,7 @@ class InitState(TypedDict, total=False):
     plan: dict
     coverage: dict
     writes: list[dict]
+    repairs: dict
     report_path: str
     published: dict
     prompt_ids: dict
@@ -63,7 +102,7 @@ class InitState(TypedDict, total=False):
 ProgressFn = Callable[[str, str], None]
 
 
-def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: PromptPack,
+def build_init_graph(agent: GenericAgent, settings: InitSettings, prompt_pack: PromptPack,
                      on_progress: ProgressFn | None = None):
     sem = asyncio.Semaphore(max(1, settings.llm_concurrency))
     pdir = settings.platform_dir
@@ -78,20 +117,29 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
 
     async def call_json(state: InitState, node: str, task: str, schema: type[BaseModel]) -> Any:
         r = req(state)
-        system = prompt_pack.compose(node, platform_dir=pdir, extra_rules=r.inputs.extra_rules,
-                                     extra_guidelines=r.inputs.extra_guidelines, shared_skills=r.inputs.shared_skills)
-        msgs = [SystemMessage(content=system), HumanMessage(content=f"{task}\n\n{schema_instructions(schema)}")]
+        run_input = prompt_pack.run_input(node, platform_dir=pdir, extra_rules=r.inputs.extra_rules,
+                                          extra_guidelines=r.inputs.extra_guidelines,
+                                          shared_skills=r.inputs.shared_skills)
         async with sem:
-            return await ainvoke_structured(llm, msgs, schema, retries=settings.json_retries)
+            return await ainvoke_structured(agent, task, schema, retries=settings.json_retries,
+                                            metadata={"init_run_id": state["run_id"], "init_node": node},
+                                            **run_input)
 
-    async def call_markdown(state: InitState, file_path: str, task: str) -> str:
+    async def call_markdown(state: InitState, file_path: str, task: str, node: str = "draft_file") -> str:
         r = req(state)
-        system = prompt_pack.compose("draft_file", platform_dir=pdir, file_path=file_path,
-                                     extra_rules=r.inputs.extra_rules, extra_guidelines=r.inputs.extra_guidelines,
-                                     shared_skills=r.inputs.shared_skills)
-        msgs = [SystemMessage(content=system), HumanMessage(content=task)]
+        run_input = prompt_pack.run_input(node, platform_dir=pdir, file_path=file_path,
+                                          extra_rules=r.inputs.extra_rules,
+                                          extra_guidelines=r.inputs.extra_guidelines,
+                                          shared_skills=r.inputs.shared_skills)
         async with sem:
-            return await ainvoke_text(llm, msgs)
+            return await ainvoke_text(agent, task,
+                                      metadata={"init_run_id": state["run_id"], "init_node": node},
+                                      **run_input)
+
+    def link_table(from_path: str, targets: list[tuple[str, str]]) -> str:
+        """Exact relative link from `from_path` to each target: the model copies these."""
+        return "\n".join(f"- `{p}`{' (' + what + ')' if what else ''}: link target `{link(from_path, p)}`"
+                         for p, what in targets if p != from_path)
 
     def operator_context(r: InitRequest) -> str:
         parts = []
@@ -124,6 +172,9 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
     def scan(state: InitState) -> dict:
         r = req(state)
         inv = scan_repository(Path(state["repo_root"]), r.inputs.scan_scope.include, r.inputs.scan_scope.exclude, pdir)
+        # Harness files live in the repository itself (root and code folders), so earlier
+        # INIT output is found among the scanned files.
+        inv.existing_harness = sorted(f.path for f in inv.files if is_harness_path(f.path))
         return {"inventory": inv.to_dict(),
                 "progress": progress("scan_repository", f"{len(inv.files)} files, {len(inv.components)} components")}
 
@@ -193,7 +244,13 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
         root = Path(state["repo_root"])
         examples = pack(root, inv["tests"][:4] + [g for g in inv["guidance"] if g.endswith("SKILL.md")][:4],
                         settings.context_budget_chars // 3, settings.max_file_chars // 2, 1)
-        task = (f"Node: derive_skills.\n\n## Analysis\n{compact_analysis(state)}\n\n"
+        earlier = sorted({PurePosixPath(p).parent.name for p in inv.get("existing_harness", []) if is_skill_path(p)})
+        shared = [s.id for s in req(state).inputs.shared_skills]
+        task = (f"Node: derive_skills.\n\n"
+                f"## Shared skill catalog ids (the only valid `shared_skill_id` values)\n{shared or 'none'}\n\n"
+                f"## Skills INIT wrote in an earlier run\n{earlier or 'none'}\nThese are local skills of this "
+                f"repository, not shared skills. Return them again as `local` (same name) when the evidence "
+                f"still supports them.\n\n## Analysis\n{compact_analysis(state)}\n\n"
                 f"## Tests ({len(inv['tests'])})\n{inv['tests'][:80]}\n\n## Package scripts\n{json.dumps(inv['package_scripts'])}\n\n"
                 f"## Documented commands\n{json.dumps(inv['readme_commands'])}\n\n## Guidance files\n{inv['guidance']}\n\n"
                 f"## Evidence\n{examples.chunks[0].text if examples.chunks else '(none)'}")
@@ -203,9 +260,17 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
             return {"skills": {"skills": []},
                     "alerts": [Alert(kind="llm", severity="warning", reason=f"derive_skills failed: {exc}").model_dump()],
                     "progress": progress("derive_skills", "failed, continuing without skills")}
+        # `shared_ref` is valid only for an id from the operator's shared catalog. Anything else
+        # (for example a SKILL.md that INIT wrote in an earlier run) is a local skill.
+        catalog = {s.id for s in req(state).inputs.shared_skills}
         seen, skills = set(), []
         for s in result.skills:
             s.name = "".join(ch if ch.isalnum() else "-" for ch in s.name.lower()).strip("-")[:60] or "skill"
+            if s.kind == "shared_ref" and (s.shared_skill_id or s.name) not in catalog:
+                s.kind = "local" if s.steps else "needs_evidence"
+                s.shared_skill_id = None
+                if s.kind == "needs_evidence" and not s.missing_evidence:
+                    s.missing_evidence = ["steps (marked shared, but no shared skill has this id)"]
             if s.name not in seen:
                 seen.add(s.name)
                 skills.append(s)
@@ -259,8 +324,13 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
         root = Path(state["repo_root"])
         skills = state.get("skills", {}).get("skills", [])
         auto = state.get("automation") or {}
-        existing = {p[len(pdir) + 1:]: p for p in inv["existing_harness"]}
-        task = (f"Node: plan_harness.\n\nHarness folder: `{pdir}/`. Existing harness files: {list(existing) or 'none'}\n\n"
+        existing = set(inv["existing_harness"])
+        hubs = hub_folders(list(inv["components"]), root, settings.local_agents_min_components)
+        hub_lines = "\n".join(f"- `{h}/AGENTS.md`: {len(c)} components ({', '.join(c)})" for h, c in hubs.items())
+        task = (f"Node: plan_harness.\n\nHarness location: the repository root and the code folders "
+                f"(paths are repository-relative). Existing harness files: {sorted(existing) or 'none'}\n\n"
+                f"## Required local AGENTS.md (folders with {settings.local_agents_min_components} or more "
+                f"components; the caller adds them if you leave them out)\n{hub_lines or 'none'}\n\n"
                 f"## Analysis\n{compact_analysis(state)}\n\n## Skills\n{json.dumps(skills)[:8000]}\n\n"
                 f"## Automation\n{json.dumps(auto)[:6000]}\n\n## Existing guidance files\n{inv['guidance']}\n\n"
                 f"## Components\n{list(inv['components'])}")
@@ -272,51 +342,91 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
         files: dict[str, PlannedFile] = {}
         for f in hp.files:
             f.path = normalize(f.path, pdir)
-            if f.path.startswith("skills/") or f.path == "HOOKS.md":
+            if is_skill_path(f.path) or f.path == "HOOKS.md":
                 continue                                        # rendered deterministically below
-            if f.path in existing and f.action == "create":
+            if (f.path in existing or (root / f.path).is_file()) and f.action == "create":
                 f.action = "update"
             files[f.path] = f
         for base, purpose in (("AGENTS.md", "Entry point for agents"), ("ARCHITECTURE.md", "Current system by component"),
                               ("RULES.md", "Binding constraints with their basis")):
             files.setdefault(base, PlannedFile(path=base, scope="repository", purpose=purpose,
-                                               action="update" if base in existing else "create"))
+                                               action="update" if (root / base).is_file() else "create"))
+
+        # Every folder with enough components gets a local AGENTS.md (enforced, not only asked).
+        for hub, comps in hubs.items():
+            p = f"{hub}/AGENTS.md"
+            files.setdefault(p, PlannedFile(path=p, scope=hub, purpose=f"Local guide for {len(comps)} components: "
+                                            + ", ".join(c[len(hub) + 1:] for c in comps)[:200],
+                                            action="update" if (root / p).is_file() else "create"))
+
+        # Folders that get a local AGENTS.md are the homes for local skills.
+        local_folders: set[str] = set()
+        for p in files:
+            if is_local_agents(p):
+                try:
+                    validate(p, root, pdir)
+                    local_folders.add(code_folder_of(p))
+                except PathRejected:
+                    pass
 
         repo_paths = {f["path"] for f in inv["files"]}
         for s in skills:
             if s["kind"] == "local":
-                p = f"skills/{s['name']}/SKILL.md"
+                home = skill_folder(s.get("scope") or [], local_folders, root)
+                p = f"{home}/skills/{s['name']}/SKILL.md" if home else f"skills/{s['name']}/SKILL.md"
                 files[p] = PlannedFile(path=p, scope=", ".join(s.get("scope") or []) or "repository",
-                                       action="update" if p in existing else "create",
+                                       action="update" if (root / p).is_file() else "create",
                                        purpose=f"Skill: {s['when_to_use'][:120]}", sources=s.get("sources") or [],
-                                       content=render_skill(SkillSpec(**s), pdir, repo_paths))
+                                       content=render_skill(SkillSpec(**s), p, repo_paths))
         if auto.get("hooks") or auto.get("verification_commands"):
             files["HOOKS.md"] = PlannedFile(
                 path="HOOKS.md", scope="repository", purpose="Active and proposed hooks, verification commands",
-                action="update" if "HOOKS.md" in existing else "create",
+                action="update" if (root / "HOOKS.md").is_file() else "create",
                 sources=sorted({e for h in auto.get("hooks", []) for e in h.get("evidence", [])}),
                 content=render_hooks([HookProposal(**h) for h in auto.get("hooks", [])],
                                      [CommandInfo(**c) for c in auto.get("verification_commands", [])]))
 
-        manifest = "\n".join(f"- `{pdir}/{f.path}` ({f.action}): {f.purpose}" for f in files.values())
+        manifest = "\n".join(f"- `{f.path}` ({f.action}): {f.purpose}" for f in files.values())
+        # Only targets the writer will accept go into the link table.
+        linkable: list[tuple[str, str]] = []
+        for f in files.values():
+            try:
+                validate(f.path, root, pdir)
+                linkable.append((f.path, f.purpose[:80]))
+            except PathRejected:
+                pass
+        linkable.append((settings.report_path, "INIT report"))
 
         async def draft(f: PlannedFile) -> None:
             if f.content is not None or f.action == "keep":
                 return
             extra = ""
-            if f.path.startswith("areas/"):
-                folder = f.path[len("areas/"):-len("/AGENTS.md")]
+            if is_local_agents(f.path):
+                folder = f.path[:-len("/AGENTS.md")]
                 local = [p for p in repo_paths if p.startswith(folder + "/")]
                 ex = pack(root, local, settings.context_budget_chars // 2, settings.max_file_chars // 2, 1)
                 extra = ex.chunks[0].text if ex.chunks else ""
-            if f.path in existing:
-                text, _ = read_excerpt(root, existing[f.path], settings.max_file_chars)
-                extra += "\n\n" + evidence_block(existing[f.path], text) + (
+                inner = hubs.get(folder)
+                own = [p for p in files if is_skill_path(p) and code_folder_of(p) == folder]
+                extra = ((f"Components inside this folder: {inner}\n" if inner else "")
+                         + ("Skills that live in this folder (list them first under `## Use these skills`): "
+                            + ", ".join(f"`{p}`" for p in own) + "\n" if own else "")
+                         + "\n" + extra)
+            if (root / f.path).is_file():
+                text, _ = read_excerpt(root, f.path, settings.max_file_chars)
+                extra += "\n\n" + evidence_block(f.path, text) + (
                     "\nThe file above exists. Write only the generated part. Do not repeat its human-authored content.")
-            depth = len(PurePosixPath(f"{pdir}/{f.path}").parts) - 1
-            t = (f"Write the Markdown body of `{pdir}/{f.path}`.\nScope: {f.scope}\nPurpose: {f.purpose}\n"
-                 f"Sources: {f.sources}\nLinks to repository files from this file start with `{'../' * depth}`.\n\n"
-                 f"## Planned harness files (link targets)\n{manifest}\n\n## Analysis\n{compact_analysis(state)}\n\n"
+            depth = len(PurePosixPath(f.path).parts) - 1
+            where = ("It sits at the repository root: link to repository files with their repository path."
+                     if not depth else
+                     f"It sits in `{PurePosixPath(f.path).parent}/`: links are relative to that folder "
+                     f"(files at the repository root start with `{'../' * depth}`).")
+            sources = [(s, "source") for s in f.sources if s in repo_paths]
+            t = (f"Write the Markdown body of `{f.path}`.\nScope: {f.scope}\nPurpose: {f.purpose}\n"
+                 f"Sources: {f.sources}\n{where}\n\n"
+                 f"## Link table (copy link targets exactly; any other file: name it in `code`, no link)\n"
+                 f"{link_table(f.path, linkable + sources)}\n\n"
+                 f"## Planned harness files\n{manifest}\n\n## Analysis\n{compact_analysis(state)}\n\n"
                  f"## Skills\n{json.dumps(skills)[:6000]}\n\n## Automation\n{json.dumps(auto)[:4000]}\n\n"
                  f"## Evidence\n{extra or '(see analysis)'}")
             try:
@@ -383,6 +493,27 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
         root = Path(state["repo_root"])
         hp = HarnessPlan.model_validate(state.get("plan") or {})
         writes = [write_file(root, pdir, f, r.dry_run) for f in hp.files]
+        # A skill INIT wrote in an earlier run that this run writes at another path (it moved
+        # next to its code) is removed from the old path, but only when the file holds nothing
+        # but INIT's block. A skill this run did not derive again stays where it is: one model
+        # answer is not enough reason to delete it.
+        planned = {f.path for f in hp.files}
+        planned_skills = {PurePosixPath(p).parent.name for p in planned if is_skill_path(p)}
+        for old in state["inventory"].get("existing_harness", []):
+            if not is_skill_path(old) or old in planned or PurePosixPath(old).parent.name not in planned_skills:
+                continue
+            target = root / old
+            if not target.is_file() or not is_generated_only(target.read_text(encoding="utf-8")):
+                continue
+            if r.dry_run:
+                writes.append(WriteResult(path=old, action="planned", detail="would remove: INIT skill no longer planned"))
+                continue
+            target.unlink()
+            try:
+                target.parent.rmdir()                       # the skill's own folder, when empty
+            except OSError:
+                pass
+            writes.append(WriteResult(path=old, action="removed", detail="INIT skill moved next to its code"))
         alerts = [Alert(kind="write_failure", severity="error", affected_scope=[w.path], reason=w.detail).model_dump()
                   for w in writes if w.action == "failed"]
         for c in hp.conflicts:
@@ -390,20 +521,117 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
         return {"writes": [w.model_dump() for w in writes], "alerts": alerts,
                 "progress": progress("apply_harness", f"{sum(w.action in ('created', 'updated') for w in writes)} written")}
 
+    # ------------------------------------------------------------------ 7b. repair_links
+    async def repair_links(state: InitState) -> dict:
+        """Every written file ends with links that resolve.
+
+        1. Check each generated block (human content outside it is never changed).
+        2. A block with broken links goes back to the Generic Agent once, with the exact
+           link table and candidates found on disk (skill `repair-links`).
+        3. Links still broken after that become plain text, and the report lists them.
+        """
+        r = req(state)
+        if r.dry_run:
+            return {"repairs": {}, "progress": progress("repair_links", "skipped (dry run)")}
+        root = Path(state["repo_root"])
+        pending = [settings.report_path, settings.status_path]
+        # Every INIT-managed file still on disk: written now, kept by the plan, or left from an
+        # earlier run. A kept file can point at a skill that moved in this run.
+        managed = {w["path"] for w in state.get("writes", []) if w["action"] in ("created", "updated", "kept")}
+        managed |= set(state["inventory"].get("existing_harness", []))
+        managed = sorted(p for p in managed if p.endswith(".md") and (root / p).is_file())
+        on_disk = sorted(p for p in {f["path"] for f in state["inventory"]["files"]} | set(managed)
+                         if (root / p).is_file())
+        targets = [(p, "") for p in managed] + [(settings.report_path, "INIT report")]
+        repaired: list[str] = []
+        unlinked: list[str] = []
+        moved: list[str] = []
+
+        def same_file(target: str) -> list[str]:
+            """Files on disk whose last two path parts match the broken target (a moved skill)."""
+            parts = PurePosixPath(target.split("#")[0]).parts
+            key = "/".join(p for p in parts[-2:] if p not in ("..", "."))
+            return [p for p in on_disk if p == key or p.endswith("/" + key)] if "/" in key else []
+
+        async def fix(path: str) -> None:
+            file = root / path
+            text = file.read_text(encoding="utf-8")
+            block = generated_block(text)
+            if block is None:
+                return
+            bad = broken_targets(root, path, block, pending)
+            if not bad:
+                return
+            # 1. Deterministic: a target whose file now lives elsewhere (one exact match).
+            new = block
+            for t in bad:
+                hits = same_file(t)
+                if len(hits) == 1:
+                    new = new.replace(f"]({t})", f"]({link(path, hits[0])})")
+                    moved.append(f"{path}: {t} -> {link(path, hits[0])}")
+            bad = broken_targets(root, path, new, pending)
+            # 2. The Generic Agent, once, for what is left.
+            if bad:
+                candidates = []
+                for t in bad:
+                    name = PurePosixPath(t.split("#")[0]).name
+                    stem = name.rsplit(".", 1)[0][:20]
+                    near = (same_file(t) or [p for p in on_disk if PurePosixPath(p).name == name
+                                             or (stem and stem in p and p.endswith(".md"))])[:5]
+                    candidates.append(f"- `{t}` -> "
+                                      + (", ".join(f"`{link(path, p)}`" for p in near) or "no candidate"))
+                task = (f"Node: repair_links.\n\nFile: `{path}`\n\n## Broken links\n"
+                        + "\n".join(f"- `{t}`" for t in bad)
+                        + "\n\n## Candidates on disk (link targets from this file)\n" + "\n".join(candidates)
+                        + f"\n\n## Link table (copy link targets exactly)\n{link_table(path, targets)}\n\n"
+                        + f"## Current body\n{evidence_block(path, new)}")
+                try:
+                    answer = (await call_markdown(state, path, task, node="repair_links")).strip("\n")
+                    # Accept a repair that keeps the body (not a summary or an empty reply).
+                    if len(answer) >= 0.6 * len(new):
+                        new = answer
+                except Exception:  # noqa: BLE001 - fall back to unlinking below
+                    pass
+            # 3. Whatever is still broken becomes plain text.
+            still = broken_targets(root, path, new, pending)
+            if still:
+                new = unlink(new, still)
+                unlinked.extend(f"{path} -> {t}" for t in still)
+            if new != block:
+                file.write_text(replace_generated_block(text, new), encoding="utf-8", newline="\n")
+                repaired.append(path)
+
+        await asyncio.gather(*(fix(p) for p in managed))
+        alerts = [Alert(kind="coverage", severity="info", affected_scope=[u.split(" -> ")[0]],
+                        reason=f"link target not found, link removed: {u}").model_dump() for u in unlinked]
+        writes = [dict(w) for w in state.get("writes", [])]
+        known = {w["path"] for w in writes}
+        # A kept or earlier file that INIT changed now is reported as updated, and committed.
+        extra = [WriteResult(path=p, action="updated", detail="links repaired").model_dump()
+                 for p in sorted(repaired) if p not in known]
+        for w in writes:
+            if w["path"] in repaired and w["action"] == "kept":
+                w["action"], w["detail"] = "updated", "links repaired"
+        return {"repairs": {"repaired": sorted(repaired), "moved": moved, "unlinked": unlinked},
+                "writes": writes + extra, "alerts": alerts,
+                "progress": progress("repair_links", f"{len(repaired)} files repaired ({len(moved)} moved targets), "
+                                                     f"{len(unlinked)} links removed")}
+
     # ------------------------------------------------------------------ 8. write_init_report
     def report(state: InitState) -> dict:
         r = req(state)
         root = Path(state["repo_root"])
         writes = [WriteResult(**w) for w in state.get("writes", [])]
         written = [w.path for w in writes if w.action in ("created", "updated", "kept")]
-        broken = check_links(root, written)
+        # The report is written below, after this check: links to it are not broken.
+        broken = check_links(root, written, pending=[] if r.dry_run else [settings.report_path, settings.status_path])
         repo_paths = {f["path"] for f in state["inventory"]["files"]}
         hp = state.get("plan") or {}
         cited = {s for f in hp.get("files", []) for s in f.get("sources", [])}
         unknown = sorted(s for s in cited
                          if ("/" in s or "." in s) and s not in repo_paths
                          and not s.startswith(pdir) and not (root / s).exists())
-        ste_files = [w for w in written if w.endswith("ARCHITECTURE.md") or "/areas/" in w]
+        ste_files = [w for w in written if w.endswith("ARCHITECTURE.md") or is_local_agents(w)]
         long_sentences = []
         for p in ste_files:
             if (root / p).is_file():
@@ -441,7 +669,8 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
         root = Path(state["repo_root"])
         ws = GitWorkspace(path=root, branch=state["branch"], base_ref=state["base_ref"], base_sha=state["base_sha"])
         try:
-            sha = ws.commit([pdir], f"INIT: agent harness under {pdir}/ (run {state['run_id']})",
+            harness = [w["path"] for w in state.get("writes", []) if w["action"] in ("created", "updated", "removed")]
+            sha = ws.commit([pdir, *harness], f"INIT: agent harness in the repository (run {state['run_id']})",
                             settings.git_author_name, settings.git_author_email)
             pushed = False
             if sha and settings.push_enabled:
@@ -457,7 +686,8 @@ def build_init_graph(llm: BaseChatModel, settings: InitSettings, prompt_pack: Pr
     g = StateGraph(InitState)
     nodes = [("prepare_workspace", prepare_workspace), ("scan_repository", scan), ("analyze_repository", analyze),
              ("derive_skills", derive), ("assess_automation", automation), ("plan_harness", plan),
-             ("assess_coverage", coverage), ("apply_harness", apply), ("write_init_report", report),
+             ("assess_coverage", coverage), ("apply_harness", apply), ("repair_links", repair_links),
+             ("write_init_report", report),
              ("publish_branch", publish)]
     for name, fn in nodes:
         g.add_node(name, fn)

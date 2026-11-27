@@ -180,9 +180,7 @@ def scan_repository(root: Path, include: list[str] | None = None, exclude: list[
             continue
         if exclude and _match(rel, exclude):
             continue
-        if rel.startswith(f"{platform_dir}/"):
-            if rel.endswith(".md"):
-                inv.existing_harness.append(rel)
+        if rel.startswith(f"{platform_dir}/"):         # INIT report and status only
             continue
         if p.name in LOCKFILES:                        # recorded, never sent to the model
             inv.lockfiles.append(rel)

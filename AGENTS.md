@@ -8,6 +8,8 @@ the code. Per-module guides live in `docs/modules/` (start at its `README.md`).
 
 - Graph logic (`run_cursor_agent`, `build_agent`, prompt rendering):
   `src/generic_agent/graph.py`. It is the only place that calls `Agent.prompt`.
+- `GenericAgent` (`run()` / `arun()` for other agents, e.g. INIT):
+  `src/generic_agent/runner.py`. It builds its graphs with `build_agent`.
 - Settings, `.env` loading, model listing, error messages:
   `src/generic_agent/config.py`.
 - Agent instructions: `src/generic_agent/prompts/default_system.md` (package

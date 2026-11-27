@@ -5,14 +5,30 @@
 ## Purpose
 
 INIT takes an existing repository (`REPO_URL` in `.env`), analyzes it, and writes an
-agent harness under `platform/` on a new branch `shipAI`: `AGENTS.md` (root and local),
-`ARCHITECTURE.md`, `RULES.md`, skills, `HOOKS.md`, and the report
-`platform/init/INIT.md`. Requirements and Architect start from that report.
+agent harness into the repository itself on a new branch `shipAI`:
 
-It is built **on top of the Generic Agent**: every LLM call is one
-`generic_agent.build_agent(settings, system_prompt, {})` run with no checkpointer.
-The INIT prompt pack becomes the `system_prompt`, so it is rendered into
-`<instructions>`. Cursor built-in tools stay disabled: the model only reads what INIT sends
+- at the root: `AGENTS.md`, `ARCHITECTURE.md`, `RULES.md`, `HOOKS.md` and the other
+  catalog files, `skills/<name>/SKILL.md`, `adr/<decision>.md`;
+- next to the code: `<code-folder>/AGENTS.md`, only in folders that already exist. Every
+  folder that holds `INIT_LOCAL_AGENTS_MIN_COMPONENTS` (default 3) or more components gets one,
+  even when the model leaves it out of the plan;
+- skills next to their code: `<code-folder>/skills/<name>/SKILL.md` in the deepest folder with
+  a local `AGENTS.md` that holds the skill's whole scope, else `skills/<name>/SKILL.md` at the
+  root. A skill INIT wrote elsewhere in an earlier run is removed when its file holds only the
+  INIT block (action `removed`); a file with human content is kept;
+- the report only under `platform/init/` (`INIT.md`, `status.json`).
+
+Agent tools (Cursor, Claude Code, Codex) find `AGENTS.md` at the root and in the folder
+they work in. Requirements and Architect start from the report. The writer
+(`repo/writer.py`) still accepts only catalog Markdown names, never touches code, configs
+or CI, and still reads the older `platform/...` and `areas/<folder>/AGENTS.md` forms.
+
+It is built **on top of the Generic Agent**: `arun_init` creates one
+`generic_agent.GenericAgent` instance (or uses `arun_init(..., agent=...)`), and every LLM
+node calls `agent.arun(task, **prompt_pack.run_input(node, ...))`. `run_input` returns the
+node's `instructions` (core + guardrails), `rules`, `guidelines`, `skills` and
+`shared_skills`; `GenericAgent` renders them into `<instructions>` of one Cursor run with
+no checkpointer. JSON repair retries go back through `run(..., history=[...])`. Cursor built-in tools stay disabled: the model only reads what INIT sends
 and never touches files. Python reads, validates and writes everything.
 
 ## Graph
@@ -20,7 +36,7 @@ and never touches files. Python reads, validates and writes everything.
 ```
 START -> prepare_workspace -> scan_repository -> analyze_repository -> derive_skills
       -> assess_automation -> plan_harness -> assess_coverage -> apply_harness
-      -> write_init_report -> publish_branch -> END
+      -> repair_links -> write_init_report -> publish_branch -> END
 ```
 
 | Node | LLM | What it does |
@@ -30,11 +46,12 @@ START -> prepare_workspace -> scan_repository -> analyze_repository -> derive_sk
 | `analyze_repository` | yes | One overview call, then per component calls; excerpts packed into the context budget (`INIT_CONTEXT_BUDGET_CHARS`). |
 | `derive_skills` | yes | Local skills with evidence, shared skills by reference, `needs_evidence` otherwise. |
 | `assess_automation` | yes | Active and proposed hooks, verification commands. Runs only `inputs.verify_commands`. Code forces new hooks to `proposed` and unexecuted commands to `documented`. |
-| `plan_harness` | yes | File manifest, then one Markdown draft call per file. `SKILL.md` and `HOOKS.md` are rendered from structured data. |
+| `plan_harness` | yes | File manifest, then one Markdown draft call per file. Each draft gets a link table with the exact relative target of every file that will exist (skill `link-harness-files`). `SKILL.md` and `HOOKS.md` are rendered from structured data. |
 | `assess_coverage` | - | Gaps, components not analyzed, files left out of the budget, RAG alert. |
-| `apply_harness` | - | Path allowlist under `platform/`, no `..`, managed block `<!-- init-agent:begin/end -->` keeps human content. |
+| `apply_harness` | - | Catalog allowlist (root files, `skills/`, `adr/`, `<existing-code-folder>/AGENTS.md`), no `..`, nothing under `platform/` except the report, managed block `<!-- init-agent:begin/end -->` keeps human content. |
+| `repair_links` | yes | Checks the links in each generated block. A block with broken links goes back to the Generic Agent once (skill `repair-links`, with the link table and candidates found on disk). Links still broken become plain text and are reported as `info` alerts. Human content outside the block is never changed. Skipped on dry run. |
 | `write_init_report` | - | `INIT.md` from the actual write results, link check, unknown evidence, STE100 sentence-length check, `status.json`. |
-| `publish_branch` | - | Commit `platform/` and push `shipAI` (`GIT_TOKEN`, optional `PUSH_URL`). |
+| `publish_branch` | - | Commit the written harness files and `platform/init/`, and push `shipAI` (`GIT_TOKEN`, optional `PUSH_URL`). |
 
 ## Prompt pack (`src/init_agent/prompts/`)
 

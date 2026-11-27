@@ -24,6 +24,7 @@ the CLI or the tests.
 | Module | Responsibility |
 | --- | --- |
 | `graph.py` | `build_agent` factory, the `run_cursor_agent` node, prompt rendering (`render_prompt`), default-prompt loading. The only module that calls `Agent.prompt`. |
+| `runner.py` | `GenericAgent` class: other agents create one instance and call `run(prompt, instructions=, rules=, guidelines=, skills=, shared_skills=, history=)`. It renders the material into one system prompt (`compose_instructions`), runs a `build_agent` graph with no checkpointer and returns `RunResult(text, metadata)`. |
 | `config.py` | `.env` loading, `Settings`, `list_model_ids()` (`Cursor.models.list()`), error translation (`ConfigError`, `CursorRunError`, `describe_error`). |
 | `tools.py` | Local Cursor SDK custom tools (`word_count`) and `default_tools()`. |
 | `studio.py` | `make_graph()` factory referenced by `langgraph.json`. No checkpointer. |
@@ -32,15 +33,17 @@ the CLI or the tests.
 | `prompts/default_system.md` | Default agent instructions, shipped as package data. |
 
 Dependency direction: `__main__` / `studio` / `api` -> `config`, `tools`, `graph`;
-`graph` -> `config` (for `Settings` and `CursorRunError`).
+`runner` -> `graph`, `config`; `graph` -> `config` (for `Settings` and `CursorRunError`).
 
 Per-module guides for changing each piece: [`modules/`](modules/README.md).
 
 ## INIT agent
 
-`src/init_agent/` is a second graph built on top of this one. Each of its LLM calls is
-`build_agent(settings, <INIT prompt pack>, {})` with no checkpointer. It clones `REPO_URL`,
-writes an agent harness under `platform/` on branch `shipAI`, and pushes it. Its router is
+`src/init_agent/` is a second graph built on top of this one. INIT creates one
+`GenericAgent` instance per run; each LLM node calls `agent.run(task, **prompt_pack.run_input(node))`,
+so the node's instructions, rules, guidelines and skills go to the Generic Agent as data. It clones `REPO_URL`,
+writes an agent harness into the repository (root and code folders; report in
+`platform/init/`) on branch `shipAI`, and pushes it. Its router is
 mounted into `api.py` as `/api/init`. See [`modules/init_agent.md`](modules/init_agent.md).
 
 ## Graph state

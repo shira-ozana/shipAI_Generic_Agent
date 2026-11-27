@@ -157,7 +157,7 @@ class HarnessPlan(BaseModel):
 
 class WriteResult(BaseModel):
     path: str
-    action: Literal["created", "updated", "kept", "skipped", "failed", "planned"]
+    action: Literal["created", "updated", "kept", "skipped", "failed", "planned", "removed"]
     detail: str = ""
     bytes: int = 0
 

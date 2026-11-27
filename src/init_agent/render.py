@@ -22,8 +22,8 @@ def _md_link(from_file: str, to_path: str, label: str | None = None) -> str:
 
 # ----------------------------------------------------------------------------- SKILL.md
 
-def render_skill(s: SkillSpec, platform_dir: str, repo_paths: set[str]) -> str:
-    me = f"{platform_dir}/skills/{s.name}/SKILL.md"
+def render_skill(s: SkillSpec, me: str, repo_paths: set[str]) -> str:
+    """`me` is the repository path of the SKILL.md being rendered (links are relative to it)."""
 
     def ref(p: str) -> str:
         return _md_link(me, p, f"`{p}`") if p in repo_paths else f"`{p}`"
@@ -110,7 +110,7 @@ def render_report(*, state: dict, writes: list[WriteResult], alerts: list[Alert]
     plan = state.get("plan") or {}
     skills = (state.get("skills") or {}).get("skills", [])
     automation = state.get("automation") or {}
-    planned = {f"{platform_dir}/{f['path']}": f for f in plan.get("files", [])}
+    planned = {f["path"]: f for f in plan.get("files", [])}
     ok = [w for w in writes if w.action in ("created", "updated", "kept", "planned")]
     failed = [w for w in writes if w.action in ("failed", "skipped")]
     md_written = [w for w in writes if w.action in ("created", "updated") and w.path.endswith(".md")]
@@ -130,7 +130,7 @@ def render_report(*, state: dict, writes: list[WriteResult], alerts: list[Alert]
         "",
     ]
     for name in ("AGENTS.md", "ARCHITECTURE.md", "RULES.md"):
-        p = f"{platform_dir}/{name}"
+        p = name
         if any(w.path == p and w.action in ("created", "updated", "kept") for w in writes):
             L.append(f"- {_md_link(me, p, name)}: {planned.get(p, {}).get('purpose', '')}")
     if analysis.get("summary"):
@@ -152,7 +152,7 @@ def render_report(*, state: dict, writes: list[WriteResult], alerts: list[Alert]
     L += ["", "## Harness map", "", "| File | Scope | Purpose | Result |", "|---|---|---|---|"]
     for w in writes:
         meta = planned.get(w.path, {})
-        shown = f"`{w.path}`" if w.action in ("failed", "skipped") else _md_link(me, w.path, w.path)
+        shown = f"`{w.path}`" if w.action in ("failed", "skipped", "removed") else _md_link(me, w.path, w.path)
         L.append(f"| {shown} | {meta.get('scope', '-')} | {meta.get('purpose', '-')} | "
                  f"{w.action}{' (' + w.detail + ')' if w.detail else ''} |")
 
@@ -165,8 +165,9 @@ def render_report(*, state: dict, writes: list[WriteResult], alerts: list[Alert]
     shared = [s for s in skills if s["kind"] == "shared_ref"]
     pending = [s for s in skills if s["kind"] == "needs_evidence"]
     for s in local:
-        p = f"{platform_dir}/skills/{s['name']}/SKILL.md"
-        L.append(f"- {_md_link(me, p, s['name'])} (local): {s['when_to_use']}")
+        p = next((x for x in planned if x.endswith(f"skills/{s['name']}/SKILL.md")), f"skills/{s['name']}/SKILL.md")
+        home = p[: -len(f"skills/{s['name']}/SKILL.md")].rstrip("/") or "repository root"
+        L.append(f"- {_md_link(me, p, s['name'])} (local, `{home}`): {s['when_to_use']}")
     for s in shared:
         L.append(f"- `{s.get('shared_skill_id') or s['name']}` (shared, by reference): {s['when_to_use']}")
     for s in pending:

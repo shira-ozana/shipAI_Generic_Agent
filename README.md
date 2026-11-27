@@ -131,6 +131,28 @@ curl -s -X POST http://127.0.0.1:8000/api/chat \
 # {"threadId":"3f2b8c1e-6a4d-4e0b-9d57-1c2a7e5f9b10","reply":"..."}
 ```
 
+## Use it from another agent: `GenericAgent.run()`
+
+Create one instance and call `run()` with the task and the material the model must follow.
+The INIT agent works this way.
+
+```python
+from generic_agent import GenericAgent, Section, Skill
+
+agent = GenericAgent()  # CURSOR_API_KEY / CURSOR_MODEL from .env on first run
+result = agent.run(
+    "Summarize src/api.",
+    instructions="You are a code analyst.",
+    rules=[Section("R1", "Evidence is required", "Cite repo paths.")],
+    guidelines=["Keep it short."],
+    skills=[Skill("analyze-component", "1. Read the inventory. 2. ...")],
+)
+print(result.text, result.metadata["cursor_run_id"])
+```
+
+Each call is self-contained (no checkpointer); pass `history=[HumanMessage(...), AIMessage(...)]`
+for earlier turns. `await agent.arun(...)` is the async form.
+
 ## Use it from Python
 
 `build_agent(settings, system_prompt, tools, *, checkpointer=None)` returns a
@@ -166,7 +188,7 @@ finish raises `generic_agent.config.CursorRunError`.
 `GIT_TOKEN` to push) in `.env`, then:
 
 ```bash
-python -m init_agent             # clone REPO_URL -> branch shipAI -> platform/ -> push
+python -m init_agent             # clone REPO_URL -> branch shipAI -> harness in root + code folders -> push
 python -m init_agent --dry-run   # plan and draft only
 ```
 

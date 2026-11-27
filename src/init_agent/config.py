@@ -37,6 +37,8 @@ class InitSettings:
     max_file_chars: int = 12000
     max_calls_per_component: int = 3
     max_components: int = 25
+    # A folder that holds at least this many components gets its own local AGENTS.md.
+    local_agents_min_components: int = 3
     docs_rag_threshold_chars: int = 400000
 
     # Extra prompt-pack folder (rules/, guidelines/, skills/) layered over the built-in one.
@@ -68,6 +70,7 @@ _KEYS = {
     "INIT_MAX_FILE_CHARS": ("max_file_chars", int),
     "INIT_MAX_CALLS_PER_COMPONENT": ("max_calls_per_component", int),
     "INIT_MAX_COMPONENTS": ("max_components", int),
+    "INIT_LOCAL_AGENTS_MIN_COMPONENTS": ("local_agents_min_components", int),
     "INIT_DOCS_RAG_THRESHOLD_CHARS": ("docs_rag_threshold_chars", int),
     "INIT_PROMPTS_DIR": ("prompts_override_dir", str),
     "INIT_LLM_CONCURRENCY": ("llm_concurrency", int),
@@ -82,6 +85,8 @@ def load_init_settings(environ: Mapping[str, str] | None = None, env_file: Path 
     values = {}
     for key, (attr, cast) in _KEYS.items():
         raw = (env.get(key) or file_values.get(key) or "").strip()
-        if raw:
+        # `your-...` is the .env.example placeholder: treat it as unset (same rule as
+        # generic_agent.config). Without GIT_TOKEN, git uses its own credential helper.
+        if raw and not raw.startswith("your-"):
             values[attr] = cast(raw)
     return InitSettings(**values)

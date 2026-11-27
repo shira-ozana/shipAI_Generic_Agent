@@ -1,7 +1,7 @@
 """CLI: `python -m init_agent [--repo-path PATH] [--request request.json] [--dry-run]`.
 
-Without --repo-path, INIT clones REPO_URL from .env, writes under platform/ on branch
-shipAI, commits and pushes.
+Without --repo-path, INIT clones REPO_URL from .env, writes the harness into the repository
+(root and code folders) and the report to platform/init/ on branch shipAI, commits and pushes.
 """
 
 from __future__ import annotations
@@ -36,6 +36,12 @@ def main(argv: list[str] | None = None) -> int:
 
     def show(node: str, msg: str) -> None:
         print(f"[{node}] {msg}", file=sys.stderr)
+
+    # The result JSON is UTF-8 (arrows, Hebrew...). A Windows console or redirect may default
+    # to a legacy code page such as cp1255 and fail at the very end of a long run.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
     result = run_init(req, on_progress=show)
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))

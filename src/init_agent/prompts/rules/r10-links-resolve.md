@@ -2,10 +2,11 @@
 id: R10
 title: Links must resolve
 kind: rule
-applies_to: ["draft_file"]
+applies_to: ["draft_file", "repair_links"]
 priority: 30
 ---
-Use relative Markdown links only to files in the "planned harness files" list or
-to repository paths in the inventory. Links from a harness file to repository code
-must climb out of `{platform_dir}/` with `../`. The caller checks every link and
-reports broken ones.
+Every relative Markdown link must point to a file that exists after this run. Use
+only the targets given in the "Link table" of the task, copied exactly: they are
+already relative to the file being written. Any other file is named in `code`,
+without a link. The caller checks every link, sends a file with a broken link back
+once for repair, and turns links that are still broken into plain text.

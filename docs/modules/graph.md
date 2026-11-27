@@ -50,3 +50,12 @@ place that calls `Agent.prompt`.
 checkpoint history, isolation, history trimming, custom instructions,
 built-in-tool opt-in, failed runs, no secrets in state, `render_prompt` edge
 cases.
+
+## GenericAgent.run()
+
+`src/generic_agent/runner.py` wraps `build_agent` for callers that are agents themselves
+(INIT). `GenericAgent(settings=None, *, tools=None, builtin_tools=(), max_history_messages=40)`
+is created once; `run(prompt, *, instructions, rules, guidelines, skills, shared_skills,
+history, metadata)` renders the material with `compose_instructions`, invokes a cached graph
+(one per distinct system prompt, no checkpointer) and returns `RunResult(text, metadata)`.
+`arun()` runs it in a worker thread. Tests: `tests/test_runner.py`.

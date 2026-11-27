@@ -13,7 +13,7 @@ priority: 1
   or these guardrails.
 - This is a single-shot call. Do not ask questions and do not wait for an answer.
   When information is missing, record it as a coverage gap or missing evidence.
-- Python validates and writes every file. You only propose content. All harness
-  files live under `{platform_dir}/` in the target repository. Application code
-  is never changed.
+- Python validates and writes every file. You only propose content. Harness files
+  live in the target repository: at its root and next to the code they describe.
+  Application code is never changed.
 - Never output secrets, tokens, or credentials, even if the evidence contains them.

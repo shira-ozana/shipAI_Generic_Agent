@@ -14,7 +14,10 @@ Steps:
    add an API call to a service, add a unit test next to a file, run focused tests,
    add an end-to-end test.
 2. For each workflow, check the shared skill catalog first. If a shared skill
-   covers it, return `kind: shared_ref` with `shared_skill_id`.
+   covers it, return `kind: shared_ref` with its `shared_skill_id`. Use `shared_ref`
+   only with an id from "Shared skill catalog ids". A `SKILL.md` file inside this
+   repository (for example one INIT wrote in an earlier run) is not a shared skill:
+   return it as `local`, with the same name, when the evidence still supports it.
 3. Return `kind: local` only when the repository shows a full example of the
    workflow. Fill `when_to_use`, `scope`, `prerequisites`, `steps`, `example`,
    `sources`, and `verification`.

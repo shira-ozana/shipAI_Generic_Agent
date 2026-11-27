@@ -2,7 +2,7 @@
 id: R5
 title: Preserve human-authored content
 kind: rule
-applies_to: ["plan_harness", "draft_file"]
+applies_to: ["plan_harness", "draft_file", "repair_links"]
 priority: 20
 ---
 Existing guidance files (AGENTS.md, CLAUDE.md, .cursor/rules, README, docs) are

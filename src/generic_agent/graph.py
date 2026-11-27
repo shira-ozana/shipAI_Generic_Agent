@@ -18,6 +18,9 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from generic_agent.config import CursorRunError, Settings
+from generic_agent import _windows_compat
+
+_windows_compat.install()  # cursor-sdk bridge launch on Windows (WinError 10038)
 
 DEFAULT_MAX_HISTORY_MESSAGES = 40
 """Most recent prior messages passed to each Cursor run."""
